@@ -14,6 +14,7 @@
 #define __UNIX_PROC_PATH "procpathfile"
 #define __UNIX_SERV_PATH "servpathfile"
 #define __SERV_PORT 80
+
 #define USID_PROTO 0xA17D
 
 /* struct to save port to sun_path mapping */
@@ -26,10 +27,21 @@ struct map_port_sunpath {
     map_port_sp_t *next;        // link to next entry
 };
 
+/* struct to store sending params */
+typedef struct send_params {
+    int destport;
+    char *destip;
+    char *msg;
+    int route_disc_flag;
+}send_params_t;
+
 /* head of port_sunpath map */
 map_port_sp_t *port_spath_head;
 
 /* insert entry in map */
 int insert_map_port_sp (int portno, char *path);
+
+/* populate send params entries */
+send_params_t * get_send_params(char *str);
 
 #endif /*__ODR_H*/

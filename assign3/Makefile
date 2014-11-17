@@ -1,11 +1,13 @@
 
 CC = gcc
 
-LIBS =  /home/courses/cse533/Stevens/unpv13e/libunp.a
+#LIBS =  /home/courses/cse533/Stevens/unpv13e/libunp.a
+LIBS =  ./Stevens/unpv13e/libunp.a
 
 FLAGS = -g -O2
 
-CFLAGS = -I/home/courses/cse533/Stevens/unpv13e/lib
+#CFLAGS = -I/home/courses/cse533/Stevens/unpv13e/lib
+CFLAGS = -I./Stevens/unpv13e/lib
 
 all: odr_and client_and server_and
 	

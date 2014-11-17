@@ -4,6 +4,27 @@
 #include <string.h>
 #include <assert.h>
 
+#define VMNAME_LEN 10
+#define IP_LEN     50
+#define __SERV_PORT 5500
+
+/* Populate entries from string to send params */
+send_params_t*
+get_send_params (char *str) {
+    assert(str);
+    char dstip[IP_LEN], dstport[IP_LEN], msg[IP_LEN], flag[IP_LEN];
+    
+    send_params_t *sp = (send_params_t *)malloc(sizeof(send_params_t));
+    sscanf(str, "%[^','],%[^','],%[^','],%s", dstip, dstport, msg, flag); 
+    
+    sp->destip          = dstip;
+    sp->msg             = msg;
+    sp->destport        = atoi(dstport);
+    sp->route_disc_flag = atoi(flag);
+    return sp;
+}
+
+
 /* insert entry in port to sunpath table */
 int
 insert_map_port_sp (int portno, char *path) {
@@ -128,7 +149,11 @@ int main (int argc, const char *argv[]) {
                 perror("Error in recvfrom");
                 return 0;
             }
-            printf("\n Received from proc sunpath %s", proc_addr.sun_path);
+            
+            send_params_t* sparams = get_send_params (buff);
+            
+            printf("\n Received data from proc sunpath %s", proc_addr.sun_path);
+            //printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, sparams->destport, sparams->msg, sparams->destip);
         }
         
         /* receiving on ethernet interface */

@@ -6,8 +6,8 @@
 #include <ctype.h>
 #include <unp.h>
 #include "utils.h"
-#include "odr.h"
 
+#define __SERV_PORT 5500
 #define VMNAME_LEN 10
 #define IP_LEN     50
 
@@ -51,10 +51,8 @@ int main (int argc, const char* argv[]) {
             continue;
         }
         
+        DEBUG(printf("\n VM name : %s canonical IP: %s", serv_vm, canon_ip));
         msg_send(cli_sockfd, canon_ip, __SERV_PORT, "hello world", 0);
-    
-        //TODO:Set timer and block on receive.
-        
     }
 
     unlink(tempfile);
