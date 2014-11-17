@@ -1,0 +1,14 @@
+#!/bin/bash
+
+NUM_VMs=10
+
+echo -n $"Removing Directories on VMs: " 
+for ((i=1; $i <= $NUM_VMs; i=i+1)); 
+  do echo -n "vm$i " ;
+    ssh root@vm$i rm -rf /home/$USER
+    sleep 1
+done
+
+echo 
+
+

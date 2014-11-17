@@ -1,0 +1,15 @@
+#!/bin/bash
+NUM_VMs=10
+
+for ((i=1; $i <= $NUM_VMs; i=i+1));do
+   echo "clean_up vm$i"
+   foo=$(ssh root@vm$i ps -aux|grep $USER)
+   IFS=$'\n'
+   for line in $foo; do
+	IFS=' '
+	arr=($line)
+	ssh root@vm$i kill ${arr[1]}
+	echo ${arr[1]}
+	sleep 1
+   done
+done

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+NUM_VMs=10
+
+echo -n $"Creating Directories on VMs: " 
+for ((i=1; $i <= $NUM_VMs; i=i+1)); 
+  do echo -n "vm$i " ;
+    ssh root@vm$i mkdir /home/$USER
+    sleep 1
+done
+
+echo
+

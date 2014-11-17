@@ -1,0 +1,18 @@
+#!/bin/bash
+
+NUM_VMs=10
+
+if [ $# -ne 1 ]
+then 
+  echo "Usage: start_app <application file name>"
+  exit 0
+fi
+
+
+echo "Start Application on VMs: " 
+for ((i=1; $i <= $NUM_VMs; i=i+1)); 
+  do echo "vm$i " 
+    ssh -f root@vm$i /home/$USER/$1
+    sleep 1
+done
+
