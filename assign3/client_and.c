@@ -38,12 +38,17 @@ int main (int argc, const char* argv[]) {
 
     /* Bind the UNIX Domain socket */
     Bind (cli_sockfd, (SA *)&cliaddr, SUN_LEN(&cliaddr));
-    printf("\n Unix Domain socket %d, sun_ath %s\n", cli_sockfd, tempfile); 
+    printf("\nUnix Domain socket %d, sun_path %s\n", cli_sockfd, tempfile); 
     
     while (1) {
         /* prompt user for server it want to connect to */
-        printf("\n Enter the Server VM: ");
+        printf("\nType \"exit\" to break\nEnter the Server VM to connect: ");
         scanf("%s", serv_vm);
+        
+        /* if user wants to exit */
+        if(strcmp(serv_vm, "exit") == 0) {
+            break;
+        }
         
         /* Retreive destination canonical IP */
         if ((get_canonical_ip (serv_vm, canon_ip)) < 0) {

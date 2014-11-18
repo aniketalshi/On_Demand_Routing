@@ -13,11 +13,9 @@ all: odr_and client_and server_and
 	
 #${CC} -o prhwaddrs prhwaddrs.o get_hw_addrs.o ${LIBS}
 
-utils.o: utils.c
-	${CC} ${CFLAGS} -c utils.c
 
-odr_and: odr_and.o utils.o
-	${CC} ${FLAGS} -o odr_and utils.o odr_and.o ${LIBS}
+odr_and: odr_and.o utils.o odr_functions.o
+	${CC} ${FLAGS} -o odr_and utils.o odr_and.o odr_functions.o ${LIBS}
 odr_and.o: odr_and.c
 	${CC} ${CFLAGS} -c odr_and.c
 
@@ -37,6 +35,11 @@ get_hw_addrs.o: get_hw_addrs.c
 prhwaddrs.o: prhwaddrs.c
 	${CC} ${FLAGS} -c prhwaddrs.c
 
+utils.o: utils.c
+	${CC} ${CFLAGS} -c utils.c
+
+odr_functions.o: odr_functions.c 
+	${CC} ${CFLAGS} -c odr_functions.c
 
 clean:
 	rm utils.o odr_and odr_and.o client_and client_and.o server_and server_and.o
