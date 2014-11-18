@@ -11,9 +11,6 @@ CFLAGS = -I./Stevens/unpv13e/lib
 
 all: odr_and client_and server_and
 	
-#${CC} -o prhwaddrs prhwaddrs.o get_hw_addrs.o ${LIBS}
-
-
 odr_and: odr_and.o utils.o odr_functions.o
 	${CC} ${FLAGS} -o odr_and utils.o odr_and.o odr_functions.o ${LIBS}
 odr_and.o: odr_and.c
@@ -42,5 +39,6 @@ odr_functions.o: odr_functions.c
 	${CC} ${CFLAGS} -c odr_functions.c
 
 clean:
-	rm utils.o odr_and odr_and.o client_and client_and.o server_and server_and.o
+	rm utils.o odr_and odr_and.o odr_functions.o \
+	client_and client_and.o server_and server_and.o
 

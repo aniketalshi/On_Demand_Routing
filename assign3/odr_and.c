@@ -1,9 +1,12 @@
 #include "odr.h"
+#include "utils.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
 
+/* globals */
+int stale_param = 0;
 
 /* Populate entries from string to send params */
 send_params_t*
@@ -60,7 +63,6 @@ fetch_entry (char *sun_path) {
 /* given the port no, get file name from port to sunpath table */
 int
 get_file_name (int portno, char *path) {
-    
     map_port_sp_t *curr;
     
     if (!port_spath_head) {
@@ -83,7 +85,7 @@ get_file_name (int portno, char *path) {
 
 
 int main (int argc, const char *argv[]) {
-    int stale_param, len, proc_sockfd, odr_sockfd, resp_sockfd, socklen;
+    int len, proc_sockfd, odr_sockfd, resp_sockfd, socklen;
     fd_set set, currset;
     map_port_sp_t * map_entry;
     char buff[MAXLINE];
@@ -93,7 +95,6 @@ int main (int argc, const char *argv[]) {
     
     /* initializations */
     socklen        = sizeof(struct sockaddr_un);
-    stale_param    = 0;
     void *recv_buf = malloc(ETH_FRAME_LEN); 
    
     /* insert serv port to server sunpath mapping in table */
@@ -178,7 +179,7 @@ int main (int argc, const char *argv[]) {
             
             /* message to send payload message */
             //send_data_payload (odr_sockfd, sparams->destip, sparams->dstport, sparams->msg);
-            send_raw_frame (odr_sockfd, NULL, NULL, 0);
+            send_req_broadcast (odr_sockfd, -1);
         }
         
         /* receiving on ethernet interface */

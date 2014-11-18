@@ -30,9 +30,42 @@ insert_map_port_sp (int portno, char *path) {
     return 1;
 }
 
-
+/* broadcast the rreq packet*/
 int 
-send_raw_frame (int sockfd, char *src_macaddr, char *dest_macaddr, int int_index) {
+send_req_broadcast (int sockfd, int recvd_int_index) {
+    
+    struct hwa_info *curr = Get_hw_struct_head(); 
+    char if_name[MAXLINE];
+    
+    /* Dest mac with all ones */
+    unsigned char dest_mac[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+
+    /* loop through all interfaces */
+    for (; curr != NULL; curr = curr->hwa_next) {
+       
+       memset(if_name, 0, MAXLINE); 
+       /* if there are aliases in if name with colons, split them */
+       sscanf(curr->if_name, "%[^:]", if_name); 
+        
+       /*send packet on all except loopback
+        * eth0 and interface on which packet is received */
+       if ((strcmp(if_name, "lo") != 0) && (strcmp(if_name, "eth0") != 0) 
+                                        && curr->if_index != recvd_int_index) {
+            
+            if(send_raw_frame (sockfd, curr->if_haddr, dest_mac, curr->if_index) < 0)
+                return -1;
+        }
+    }
+
+    return 0;
+}
+
+
+
+/* send raw ethernet frame */
+int 
+send_raw_frame (int sockfd, char *src_macaddr, 
+                    char *dest_macaddr, int int_index) {
 
     /*target address*/
     struct sockaddr_ll socket_address;
@@ -49,14 +82,14 @@ send_raw_frame (int sockfd, char *src_macaddr, char *dest_macaddr, int int_index
     /*another pointer to ethernet header*/
     struct ethhdr *eh = (struct ethhdr *)etherhead;
 
-    int j, send_result = 0;
+    int i, j, send_result = 0;
     
     /*our MAC address*/
-    unsigned char src_mac[6] = {0x00, 0x0c, 0x29, 0xd9, 0x08, 0xf6};
+    char *src_mac  = convert_to_mac(src_macaddr);
 
-    /*other host MAC address*/
-    unsigned char dest_mac[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-
+    /* dest Mac address */
+    char *dest_mac = convert_to_mac(dest_macaddr);
+    
     /*prepare sockaddr_ll*/
 
     /*RAW communication*/
@@ -64,7 +97,7 @@ send_raw_frame (int sockfd, char *src_macaddr, char *dest_macaddr, int int_index
     socket_address.sll_protocol = htons(ETH_P_IP); 
 
     /*index of the network device */
-    socket_address.sll_ifindex  = 3;
+    socket_address.sll_ifindex  = int_index;
 
     /*ARP hardware identifier is ethernet*/
     socket_address.sll_hatype   = ARPHRD_ETHER;
@@ -74,20 +107,19 @@ send_raw_frame (int sockfd, char *src_macaddr, char *dest_macaddr, int int_index
 
     /*address length*/
     socket_address.sll_halen    = ETH_ALEN;     
+    
     /*MAC - begin*/
-    socket_address.sll_addr[0]  = 0xff;     
-    socket_address.sll_addr[1]  = 0xff;     
-    socket_address.sll_addr[2]  = 0xff;
-    socket_address.sll_addr[3]  = 0xff;
-    socket_address.sll_addr[4]  = 0xff;
-    socket_address.sll_addr[5]  = 0xff;
-    /*MAC - end*/
+    for(i = 0; i < HW_ADDR; ++i) {
+        socket_address.sll_addr[i]  = dest_mac[i];     
+    }
     socket_address.sll_addr[6]  = 0x00;/*not used*/
     socket_address.sll_addr[7]  = 0x00;/*not used*/
 
 
-    /*set the ethernet frame header
+    /* construct the ethernet frame header
+     * -------------------------------
      * |Dest Mac | Src Mac | type id |
+     * -------------------------------
      * */
     memcpy((void*)buffer, (void*)dest_mac, ETH_ALEN);
     memcpy((void*)(buffer+ETH_ALEN), (void*)src_mac, ETH_ALEN);
@@ -99,13 +131,87 @@ send_raw_frame (int sockfd, char *src_macaddr, char *dest_macaddr, int int_index
     }
 
     /*send the packet*/
-    send_result = sendto(sockfd, buffer, ETH_FRAME_LEN, 0, 
-            (struct sockaddr*)&socket_address, sizeof(socket_address));
-    
-    if (send_result == -1) {
+    if ((send_result = sendto(sockfd, buffer, ETH_FRAME_LEN, 0, 
+            (struct sockaddr*)&socket_address, sizeof(socket_address))) < 0) {
         perror("\nError in Sending frame");     
     }
+    DEBUG(printf("\nEth frame sent\n"));
     
-    DEBUG(printf("\n Eth frame sent"));
     return send_result;
+}
+
+
+/* fill the routing table entry*/
+int
+insert_r_entry (r_table_t *r_tab, r_entry_t *r_ent, char *dest_ip, 
+                char *n_hop, int intf_n, int hops, int b_id) {
+    time_t      ticks;
+    int         i;
+    r_entry_t   *temp_r_entry;
+
+    r_ent = calloc(0, sizeof(r_entry_t));
+    ticks = time(NULL);
+
+    r_ent->destip   = dest_ip;
+    r_ent->next_hop = n_hop;
+    r_ent->intf_no  = intf_n;
+    r_ent->no_hops  = hops;
+    r_ent->bid      = b_id;
+    r_ent->ts       = *ctime (&ticks);
+   
+    /* check if the entry already exists in the routing table */
+    if ((i = get_r_entry (r_tab, dest_ip, temp_r_entry)) > 0){
+        
+        /* if an old entry exists in the table */
+        temp_r_entry = r_ent;
+        
+        memcpy (r_tab->r_ent[i], r_ent, sizeof(r_entry_t));
+        free (r_ent);
+        
+        return 1;
+    }
+
+    /* find the first possible to slot to insert r_entry */
+    for (i = 0; i < 10; i++) {
+        if (!r_tab->r_ent[i]) {
+            r_tab->r_ent[i] = r_ent;
+            return 1;
+        }
+        else if (strcmp (r_tab->r_ent[i]->destip, dest_ip)) {
+            /* Replace the entry if an old entry exists. */
+            
+            free(r_tab->r_ent[i]);
+            r_tab->r_ent[i] = r_ent;
+        }
+    }
+
+    /* if table full */
+    printf ("ERROR: Cannot insert in routing table; table full.\n");
+
+    free (r_ent);
+}
+
+/* search ip address in routing table */
+int
+get_r_entry (r_table_t *r_tab, char *dest_ip, r_entry_t *r_entry) {
+
+    time_t  ticks;
+    int     i = 0, cur_ts = 0;
+    
+    ticks   = time(NULL);
+    cur_ts  = *ctime(&ticks);
+    
+    for (i = 0; i < 10; i++) {    
+        if (r_tab->r_ent[i] && 
+                strcmp (r_tab->r_ent[i]->destip, dest_ip)) {
+            
+            if ((r_tab->r_ent[i]->ts + stale_param) < cur_ts) {
+                r_entry = r_tab->r_ent[i];
+                return i;
+            }
+        }
+    }
+    
+    /* if routing table is empty or entry not found */
+    return -1;
 }

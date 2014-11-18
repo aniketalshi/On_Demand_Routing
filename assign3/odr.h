@@ -19,6 +19,8 @@
 #define VMNAME_LEN 10
 #define IP_LEN     50
 
+/********* map of port to sunpath table ************/
+
 /* struct to save port to sun_path mapping */
 typedef struct map_port_sunpath map_port_sp_t;
 
@@ -29,6 +31,10 @@ struct map_port_sunpath {
     map_port_sp_t *next;        // link to next entry
 };
 
+map_port_sp_t *port_spath_head; /* head of port_sunpath map */
+
+/*******************************************************/
+
 /* struct to store sending params */
 typedef struct send_params {
     char destip[MAXLINE];
@@ -37,19 +43,33 @@ typedef struct send_params {
     int route_disc_flag;
 }send_params_t;
 
-/* head of port_sunpath map */
-map_port_sp_t *port_spath_head;
 
-/* insert entry in map */
-int insert_map_port_sp (int portno, char *path);
+/************** Routing table structure ***********************/
+/* routing table entry struct */
+typedef struct r_entry {
+    char    *destip;
+    char    *next_hop;
+    int     intf_no;
+    int     no_hops;
+    int     ts;
+    int     bid;
+    void    *pending_msgs;
+}r_entry_t;
 
-/* populate send params entries */
-send_params_t * get_send_params(char *str);
+/* struct to hold all routing table entries */
+typedef struct r_table {
+    r_entry_t *r_ent[10];
+}r_table_t;
 
-/* fetch port to sunpath mapping entry */
-map_port_sp_t *fetch_entry (char *sun_path);
+/*******************************************************/
 
-/* Send raw ethernet frame */
-int send_raw_frame (int sockfd, char *src_macaddr, char *dest_macaddr, int int_index);
+/* staleness parameter */
+extern int stale_param;
+
+int insert_map_port_sp (int , char *);           /* insert entry in map */
+send_params_t * get_send_params(char *);         /* populate send params entries */
+map_port_sp_t *fetch_entry (char *);             /* fetch port to sunpath mapping entry */
+int send_raw_frame (int , char *, char *, int);  /* Send raw ethernet frame */
+int send_req_broadcast (int , int);              /* broadcast the rreq packets */
 
 #endif /*__ODR_H*/
