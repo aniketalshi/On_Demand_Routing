@@ -23,7 +23,7 @@
 
 /* Type of frame */
 #define __RREQ       1
-#define __RRPE       2
+#define __RREP       2
 #define __DATA       3
 #define __RREQ_ASENT 4
 
@@ -73,7 +73,7 @@ typedef struct odr_frame_struct {
    int  frame_type;                  // type of the frame
    int  broadcast_id;                // broadcast id for rrep
    int  hop_count;                   // hop count to dest
-   int  payload_len;                 // lenght of data payload
+   int  payload_len;                 // length of data payload
    int  route_disc_flag;             // Route discovery flag
    int  src_port;                    // source port no
    int  dst_port;                    // Dest port no
@@ -100,13 +100,21 @@ extern int stale_param;
 int insert_map_port_sp (int , char *);           /* insert entry in map */
 send_params_t * get_send_params(char *);         /* populate send params entries */
 map_port_sp_t *fetch_entry (char *);             /* fetch port to sunpath mapping entry */
-int send_raw_frame (int , char *, char *, int);  /* Send raw ethernet frame */
-int send_req_broadcast (int , int);              /* broadcast the rreq packets */
+
+
+int send_raw_frame (int, char *, char *, int, odr_frame_t*);  /* Send raw ethernet frame */
+int send_req_broadcast (int, int, int, int, int, char *, char *);              /* broadcast the rreq packets */
+
+
 int get_r_entry (char *, r_entry_t **);          /* get the entry in routing table */
 r_entry_t * insert_r_entry (char *, char *, 
-                           int, int, int);       /*insert entry in routing table */
+                           int, int, int);       /* insert entry in routing table */
 
 odr_frame_t *lookup_pending_queue (int );        /* lookup the frame in pending_queue */
 int insert_pending_queue (odr_frame_t *);        /* insert frame in pending queue */
+
+int process_recvd_frame (odr_frame_t **, void *); /* process recvd frame */
+odr_frame_t * construct_odr (int , int , int , int , int , int ,  /* construct and ODR frame */
+                              int , char *, char *, char *);
 
 #endif /*__ODR_H*/

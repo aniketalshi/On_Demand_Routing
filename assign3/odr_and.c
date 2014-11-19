@@ -83,7 +83,7 @@ get_file_name (int portno, char *path) {
     return -1;
 }
 
-/* function to handle request from peer process received by ODR */
+/* handle request from peer process received by ODR */
 int
 handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr, 
                                         send_params_t *sparams) {
@@ -112,22 +112,69 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
 
 
     /* message to send payload message */
-    //send_req_broadcast (sockfd, -1);
-
+    send_req_broadcast (sockfd, -1, get_broadcast_id(), 0, 0, "1.1.1.1", "1.2.3.4");
+    return 0;
 
 }
+
+/* handle message received over ethernet interface */
+int
+handle_ethernet_msg (int sockfd, struct sockaddr_ll *proc_addr, void *recv_buf) {
+
+    odr_frame_t *recvd_odr_frame;
+    if (process_recvd_frame (&recvd_odr_frame, recv_buf) < 0) {
+        perror("\nError in processing recvd frame");
+        return 0;
+    }
+    
+    if(recvd_odr_frame == NULL) {
+        perror("\nError in processing recvd frame........");
+        return 0;
+    }
+    
+    DEBUG(printf("\nReceived the packet %d", recvd_odr_frame->frame_type));
+    switch (recvd_odr_frame->frame_type) {
+        case __RREQ: {
+            printf("\n Request packet\n");
+            break;
+        }
+        
+        case __RREP: {
+            printf("\n Reply packet\n");
+            break;
+        }
+
+        case __DATA: {
+            printf("\n Data Packet");
+            break;
+        }
+
+        case __RREQ_ASENT: {
+            printf("\n Request packet with Asent flag set");
+            break;
+        }
+
+        default: {
+            printf("\n Error in packet type");
+            return -1;
+        }
+    }
+    
+    return 0;
+}
+        
 
 int main (int argc, const char *argv[]) {
     int len, proc_sockfd, odr_sockfd, resp_sockfd, socklen;
     fd_set set, currset;
     char buff[MAXLINE];
-    socklen_t odrsize;
     struct sockaddr_un serv_addr, proc_addr, resp_addr;
     struct sockaddr_ll odr_addr;
     
     /* initializations */
     socklen        = sizeof(struct sockaddr_un);
     void *recv_buf = malloc(ETH_FRAME_LEN); 
+    socklen_t odrsize = sizeof(struct sockaddr_ll);
    
     /* insert serv port to server sunpath mapping in table */
     if (insert_map_port_sp (__SERV_PORT, __UNIX_SERV_PATH) < 0) {
@@ -201,13 +248,12 @@ int main (int argc, const char *argv[]) {
             send_params_t* sparams = get_send_params (buff);
             
             /* process this msg received from peer proc */
-            if(handle_peer_msg(proc_sockfd, &proc_addr, sparams) < 0)
+            if (handle_peer_msg(odr_sockfd, &proc_addr, sparams) < 0)
                 return 0;
         }
         
         /* receiving on ethernet interface */
         if (FD_ISSET(odr_sockfd, &currset)) {
-            printf("\n Stuck here"); 
             memset(recv_buf, 0, ETH_FRAME_LEN); 
             memset(&odr_addr, 0, sizeof(odr_addr));
             
@@ -216,10 +262,10 @@ int main (int argc, const char *argv[]) {
                 perror("\nError in recvfrom");
                 return 0;
             }
-            
-            printf("\nReceived the packet");
+           
 
-
+            if(handle_ethernet_msg (proc_sockfd, &odr_addr, recv_buf) < 0)
+                return 0;
 
             /* ODR process to send message to */
             /*
