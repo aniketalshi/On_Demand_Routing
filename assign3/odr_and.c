@@ -83,11 +83,43 @@ get_file_name (int portno, char *path) {
     return -1;
 }
 
+/* function to handle request from peer process received by ODR */
+int
+handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr, 
+                                        send_params_t *sparams) {
+    assert(proc_addr);
+    assert(sparams);
+
+    map_port_sp_t * map_entry;
+    
+    printf("\n Received data from proc sunpath %s", proc_addr->sun_path);
+    DEBUG(printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, 
+                    sparams->destport, sparams->msg, sparams->destip));
+    
+    /* check if entry exist and if not insert new entry in port to sunpath table */
+    if((map_entry = fetch_entry (proc_addr->sun_path)) == NULL) {
+        fprintf(stderr, "unable to create entry in port sunpath table");
+        return -1;
+    }
+   
+    /* 1. Check if entry for this dest is there in routing table
+     * 2. If not, insert this msg in pending_queue
+     *    2.1 Flood RREQ
+     * 3. If entry is present, check validity
+     * 4. If all is well, send the ethernet frame on int in routing table
+     */
+
+
+
+    /* message to send payload message */
+    //send_req_broadcast (sockfd, -1);
+
+
+}
 
 int main (int argc, const char *argv[]) {
     int len, proc_sockfd, odr_sockfd, resp_sockfd, socklen;
     fd_set set, currset;
-    map_port_sp_t * map_entry;
     char buff[MAXLINE];
     socklen_t odrsize;
     struct sockaddr_un serv_addr, proc_addr, resp_addr;
@@ -128,7 +160,8 @@ int main (int argc, const char *argv[]) {
     
     /* Bind the UNIX Domain socket */
     Bind(proc_sockfd, (SA *)&serv_addr, SUN_LEN(&serv_addr));
-    printf("\nUnix Domain socket %d, sun_path %s\n", proc_sockfd, __UNIX_PROC_PATH); 
+    printf("\nUnix Domain socket %d, sun_path file name %s\n",
+                                    proc_sockfd, __UNIX_PROC_PATH); 
     
     /* Get the new PF Packet socket */
     if((odr_sockfd = socket(PF_PACKET, SOCK_RAW, htons(USID_PROTO))) < 0) {
@@ -167,19 +200,9 @@ int main (int argc, const char *argv[]) {
             /* populate the send params from char sequence received from process */
             send_params_t* sparams = get_send_params (buff);
             
-            printf("\n Received data from proc sunpath %s", proc_addr.sun_path);
-            DEBUG(printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, 
-                            sparams->destport, sparams->msg, sparams->destip));
-        
-            /* check if entry exist and if not insert new entry in port to sunpath table */
-            if((map_entry = fetch_entry (proc_addr.sun_path)) == NULL) {
-                fprintf(stderr, "unable to create entry in port sunpath table");
+            /* process this msg received from peer proc */
+            if(handle_peer_msg(proc_sockfd, &proc_addr, sparams) < 0)
                 return 0;
-            }
-            
-            /* message to send payload message */
-            //send_data_payload (odr_sockfd, sparams->destip, sparams->dstport, sparams->msg);
-            send_req_broadcast (odr_sockfd, -1);
         }
         
         /* receiving on ethernet interface */

@@ -61,7 +61,6 @@ send_req_broadcast (int sockfd, int recvd_int_index) {
 }
 
 
-
 /* send raw ethernet frame */
 int 
 send_raw_frame (int sockfd, char *src_macaddr, 
@@ -142,72 +141,81 @@ send_raw_frame (int sockfd, char *src_macaddr,
 
 
 /* fill the routing table entry*/
-int
-insert_r_entry (r_table_t *r_tab, r_entry_t *r_ent, char *dest_ip, 
-                char *n_hop, int intf_n, int hops, int b_id) {
-    time_t      ticks;
-    int         i;
-    r_entry_t   *temp_r_entry;
+r_entry_t *
+insert_r_entry (char *dest_ip, char *n_hop, 
+                           int intf_n, int hops, int b_id) { 
+    assert(dest_ip);
+    assert(n_hop);
+    
+    r_entry_t *temp_r_entry;
 
-    r_ent = calloc(0, sizeof(r_entry_t));
-    ticks = time(NULL);
-
-    r_ent->destip   = dest_ip;
-    r_ent->next_hop = n_hop;
-    r_ent->intf_no  = intf_n;
-    r_ent->no_hops  = hops;
-    r_ent->bid      = b_id;
-    r_ent->ts       = *ctime (&ticks);
-   
     /* check if the entry already exists in the routing table */
-    if ((i = get_r_entry (r_tab, dest_ip, temp_r_entry)) > 0){
+    if (get_r_entry (dest_ip, &temp_r_entry) >= 0) {
         
-        /* if an old entry exists in the table */
-        temp_r_entry = r_ent;
+        /* check if entry is not null */
+        assert(temp_r_entry);
         
-        memcpy (r_tab->r_ent[i], r_ent, sizeof(r_entry_t));
-        free (r_ent);
+        /* update the timestamp of this entry */
+        gettimeofday(&(temp_r_entry->timestamp), 0);
         
-        return 1;
+        return temp_r_entry;
     }
+   
+    /* entry doesnot exist, so insert new node */
+    r_entry_t *r_ent = (r_entry_t *)calloc(1, sizeof(r_entry_t));
 
-    /* find the first possible to slot to insert r_entry */
-    for (i = 0; i < 10; i++) {
-        if (!r_tab->r_ent[i]) {
-            r_tab->r_ent[i] = r_ent;
-            return 1;
-        }
-        else if (strcmp (r_tab->r_ent[i]->destip, dest_ip)) {
-            /* Replace the entry if an old entry exists. */
-            
-            free(r_tab->r_ent[i]);
-            r_tab->r_ent[i] = r_ent;
-        }
-    }
-
-    /* if table full */
-    printf ("ERROR: Cannot insert in routing table; table full.\n");
-
-    free (r_ent);
+    strcpy(r_ent->destip, dest_ip);
+    strcpy(r_ent->next_hop, n_hop);
+    gettimeofday(&(r_ent->timestamp), 0);
+    r_ent->if_no         = intf_n;
+    r_ent->no_hops       = hops;
+    r_ent->broadcast_id  = b_id;
+    r_ent->next          = NULL;
+   
+    /* insert it as top of routing table
+     * if table is empty this will be first entry in table*/
+    r_ent->next = routing_table_head;
+    routing_table_head = r_ent;
+    
+    return r_ent;
 }
 
 /* search ip address in routing table */
 int
-get_r_entry (r_table_t *r_tab, char *dest_ip, r_entry_t *r_entry) {
+get_r_entry (char *dest_ip, r_entry_t **r_entry) {
+    
+    assert(dest_ip);
 
-    time_t  ticks;
-    int     i = 0, cur_ts = 0;
+    /* if routing table is empty */
+    if (!routing_table_head) 
+        return -1;
     
-    ticks   = time(NULL);
-    cur_ts  = *ctime(&ticks);
+    r_entry_t *curr = routing_table_head;
+    int i = 0;
     
-    for (i = 0; i < 10; i++) {    
-        if (r_tab->r_ent[i] && 
-                strcmp (r_tab->r_ent[i]->destip, dest_ip)) {
+     struct timeval currtime;
+     gettimeofday(&currtime, 0);
+    /* iterate over all entries in routing table */
+    for (; curr != NULL; curr = curr->next) {
+        
+        /* if entry with given destination exists */
+        if (strcmp (curr->destip, dest_ip) == 0) {
             
-            if ((r_tab->r_ent[i]->ts + stale_param) < cur_ts) {
-                r_entry = r_tab->r_ent[i];
-                return i;
+            /* check if entry is stale */
+            if ((currtime.tv_sec - curr->timestamp.tv_sec) < stale_param) {
+                *r_entry = curr;
+                return 0;
+            
+            } else {
+                /* delete this entry */
+                if(curr->prev) {
+                    curr->prev->next = curr->next;
+                }
+                if(curr->next) {
+                    curr->next->prev = curr->prev;
+                }
+                free(curr);
+                break;
             }
         }
     }
@@ -215,3 +223,67 @@ get_r_entry (r_table_t *r_tab, char *dest_ip, r_entry_t *r_entry) {
     /* if routing table is empty or entry not found */
     return -1;
 }
+
+/* lookup the frame in pending message queue based on broadcast id */
+odr_frame_t *
+lookup_pending_queue (int broadcast_id) {
+   if (!pending_queue_head)
+       return NULL;
+    
+    pending_msgs_t *curr = pending_queue_head;
+    
+    for(; curr != NULL; curr = curr->next) {
+        assert(curr->odrframe);
+        
+        /* if we have found our node */
+        if (curr->odrframe->broadcast_id == broadcast_id) {
+            
+            /* if this is the head of queue */
+            if (curr == pending_queue_head) {
+                pending_queue_head = pending_queue_head->next;
+                return curr->odrframe;
+            }
+            
+            /* adjust the previous and next pointers */
+            if(curr->prev)
+                curr->prev->next = curr->next;
+
+            if(curr->next)
+                curr->next->prev = curr->prev;
+
+            return curr->odrframe;
+        }
+    }
+    
+    /* if node is not found */
+    return NULL;
+}
+
+/* insert message in pending queue */
+int
+insert_pending_queue (odr_frame_t *odrframe) {
+    assert(odrframe);
+    
+    /* if entry is already present in queue */
+    if (lookup_pending_queue (odrframe->broadcast_id) != NULL)
+        return 0;
+   
+    pending_msgs_t *entry = calloc(1, sizeof(pending_msgs_t));
+    
+    /* insert at the front of the queue */
+    entry->odrframe = odrframe;
+    
+    /* if head is not present */
+    if (!pending_queue_head) {
+        pending_queue_head = entry;
+        return 0;
+    }
+    
+    /* make this entry head */
+    entry->next              = pending_queue_head;
+    pending_queue_head->prev = entry;
+    pending_queue_head       = entry;
+    
+    return 0;
+}
+

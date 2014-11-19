@@ -18,50 +18,81 @@
 #define USID_PROTO 0xA17D
 #define VMNAME_LEN 10
 #define IP_LEN     50
+#define PAYLOAD_SIZE 1440
+#define HWADDR      6
 
-/********* map of port to sunpath table ************/
+/* Type of frame */
+#define __RREQ       1
+#define __RRPE       2
+#define __DATA       3
+#define __RREQ_ASENT 4
+
+/****************** map of port to sunpath table ************/
 
 /* struct to save port to sun_path mapping */
 typedef struct map_port_sunpath map_port_sp_t;
 
 struct map_port_sunpath {
-    int  portno;                // port num
-    char sun_path[100];         // sun path associated
-    struct timeval ts;          // last time stamp updated
-    map_port_sp_t *next;        // link to next entry
+    struct timeval ts;        // last time stamp updated
+    int   portno;             // port num
+    char  sun_path[100];      // sun path associated
+    map_port_sp_t  *next;     // link to next entry
 };
 
 map_port_sp_t *port_spath_head; /* head of port_sunpath map */
 
-/*******************************************************/
+/*************************************************************/
 
 /* struct to store sending params */
 typedef struct send_params {
     char destip[MAXLINE];
-    char msg[MAXLINE];
-    int destport;
-    int route_disc_flag;
+    char msg[PAYLOAD_SIZE];
+    int  destport;
+    int  route_disc_flag;
 }send_params_t;
 
 
 /************** Routing table structure ***********************/
 /* routing table entry struct */
 typedef struct r_entry {
-    char    *destip;
-    char    *next_hop;
-    int     intf_no;
-    int     no_hops;
-    int     ts;
-    int     bid;
-    void    *pending_msgs;
+    char  destip[INET_ADDRSTRLEN];    // destination canonical ip
+    char  next_hop[HWADDR];           // Next hop ethernet addr
+    int   if_no;                      // interface no to send packet
+    int   no_hops;                    // Num of hops to dest
+    int   broadcast_id;               // Broadcast id
+    struct timeval timestamp;         // last updated time stamp
+    struct r_entry *next, *prev;      // Next entry in list
 }r_entry_t;
 
-/* struct to hold all routing table entries */
-typedef struct r_table {
-    r_entry_t *r_ent[10];
-}r_table_t;
+/* head of odr routing table */
+r_entry_t *routing_table_head;
 
-/*******************************************************/
+/**************** ODR Frame struct ***************************/
+
+typedef struct odr_frame_struct {
+   int  frame_type;                  // type of the frame
+   int  broadcast_id;                // broadcast id for rrep
+   int  hop_count;                   // hop count to dest
+   int  payload_len;                 // lenght of data payload
+   int  route_disc_flag;             // Route discovery flag
+   int  src_port;                    // source port no
+   int  dst_port;                    // Dest port no
+   char dest_ip [INET_ADDRSTRLEN];   // Dest canonical ip
+   char src_ip  [INET_ADDRSTRLEN];   // source canonical ip
+   char payload [PAYLOAD_SIZE];      // data payload
+} odr_frame_t;
+
+/*************** Queue of pending msgs ***********************/
+
+/* list of all pending messages */
+typedef struct pending_msgs {
+    odr_frame_t *odrframe;
+    struct pending_msgs *next, *prev;
+}pending_msgs_t;
+
+/* head of pending message queue */
+pending_msgs_t *pending_queue_head;
+/*************************************************************/
 
 /* staleness parameter */
 extern int stale_param;
@@ -71,5 +102,11 @@ send_params_t * get_send_params(char *);         /* populate send params entries
 map_port_sp_t *fetch_entry (char *);             /* fetch port to sunpath mapping entry */
 int send_raw_frame (int , char *, char *, int);  /* Send raw ethernet frame */
 int send_req_broadcast (int , int);              /* broadcast the rreq packets */
+int get_r_entry (char *, r_entry_t **);          /* get the entry in routing table */
+r_entry_t * insert_r_entry (char *, char *, 
+                           int, int, int);       /*insert entry in routing table */
+
+odr_frame_t *lookup_pending_queue (int );        /* lookup the frame in pending_queue */
+int insert_pending_queue (odr_frame_t *);        /* insert frame in pending queue */
 
 #endif /*__ODR_H*/
