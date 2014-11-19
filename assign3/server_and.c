@@ -13,49 +13,40 @@
 
 int main (int argc, const char* argv[]) {
     
-    int fp, cli_sockfd;
-    struct sockaddr_un cliaddr;
-    char serv_vm[VMNAME_LEN], canon_ip[IP_LEN];
-    
-    /* temporary sun_path name for binding socket */
-    char tempfile[] = "/tmp/file_and_XXXXXX";
-    if ((fp = mkstemp(tempfile)) < 0) {
-        perror("mkstemp error");
-        return 0;
-    }
-    unlink (tempfile);
+    int     fp, serv_sockfd, cli_port;
+    struct  sockaddr_un servaddr;
+    char    serv_vm[VMNAME_LEN], msg[MAXLINE], cli_ip[IP_LEN];
+    time_t  ticks;
+
+    unlink (__UNIX_SERV_PATH);
     
     /* create a UNIX Domain socket */
-    if ((cli_sockfd = socket(AF_LOCAL, SOCK_DGRAM, 0)) < 0) {
+    if ((serv_sockfd = socket(AF_LOCAL, SOCK_DGRAM, 0)) < 0) {
         fprintf(stderr, "\n error creating unix domain socket\n");
         return 0;
     }
     
-    /* populate cli addr struct */
-    memset (&cliaddr, 0, sizeof(cliaddr));
-    cliaddr.sun_family = AF_LOCAL;
-    strcpy (cliaddr.sun_path, tempfile);
+    /* populate serv addr struct */
+    memset (&servaddr, 0, sizeof(servaddr));
+    servaddr.sun_family = AF_LOCAL;
+    strcpy (servaddr.sun_path, __UNIX_SERV_PATH);
 
     /* Bind the UNIX Domain socket */
-    Bind (cli_sockfd, (SA *)&cliaddr, SUN_LEN(&cliaddr));
-    printf("\n Unix Domain socket %d, sun_ath %s\n", cli_sockfd, tempfile); 
+    Bind (serv_sockfd, (SA *)&servaddr, SUN_LEN(&servaddr));
+    printf("\n Unix Domain socket %d\n", serv_sockfd); 
     
     while (1) {
-        /* prompt user for server it want to connect to */
-        printf("\n Enter the Server VM: ");
-        scanf("%s", serv_vm);
         
-        /* Retreive destination canonical IP */
-        if ((get_canonical_ip (serv_vm, canon_ip)) < 0) {
-            fprintf(stderr, "\n server vm not found. Try again");
-            continue;
-        }
+        msg_recv (serv_sockfd, msg, cli_ip, cli_port);
         
-        msg_send(cli_sockfd, canon_ip, __SERV_PORT, "hello world", 0);
+        ticks = time(NULL);
+        snprintf(msg, sizeof(msg), "%.24s\r\n", ctime(&ticks));
         
-        //TODO:Set timer and block on receive.
+        /* send the current timestamp to client through ODR API */
+        msg_send(serv_sockfd, cli_ip, cli_port, msg, 0); 
     }
 
-    unlink(tempfile);
+    unlink(__UNIX_SERV_PATH);
     return 0;
 }
+
