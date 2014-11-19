@@ -22,11 +22,16 @@ get_canonical_ip (char *serv_vm, char *canon_ip) {
     assert(addr_list[0]);
     
     strcpy(canon_ip, inet_ntoa(*(struct in_addr *)addr_list[0]));
-    //DEBUG(printf("\n VM name : %s canonical IP: %s",
-    //                    he->h_name, inet_ntoa(*(struct in_addr *)addr_list[0])));
     return 0;
 }
 
+/* function to return new broadcast id */
+int
+get_broadcast_id() {
+
+    static int broadcast_id = 10;
+    return ++broadcast_id;
+}
 
 /* API for receiving message */
 int
@@ -194,7 +199,7 @@ convert_to_mac (char *src_macaddr) {
     
     char *mac = (char *)malloc(HW_ADDR);
     int i;
-
+    
     for(i = 0; i < HW_ADDR; ++i) {
         mac[i] = *src_macaddr++ & 0xff;
         DEBUG(printf("%.2x%s", mac[i], (i == HW_ADDR-1)?" ":":"));

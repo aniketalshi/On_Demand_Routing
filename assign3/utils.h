@@ -56,5 +56,6 @@ void   free_hwa_info(struct hwa_info *);
 int get_canonical_ip (char *, char *);
 int msg_send (int, char*, int, char*, int );
 char *convert_to_mac(char *);
-    
+int get_broadcast_id();
+
 #endif /* __UTILS_H */

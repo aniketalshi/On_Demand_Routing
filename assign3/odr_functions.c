@@ -30,14 +30,19 @@ insert_map_port_sp (int portno, char *path) {
     return 1;
 }
 
-/* broadcast the rreq packet*/
+/* broadcast the rreq packet received from this proc*/
 int 
-send_req_broadcast (int sockfd, int recvd_int_index) {
-    
+send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, int hopcount, 
+                            int rdisc_flag, char* srcip, char *dstip) {
+   
+    assert(srcip);
+    assert(dstip);
+
     struct hwa_info *curr = Get_hw_struct_head(); 
     char if_name[MAXLINE];
+    odr_frame_t *odrframe;
     
-    /* Dest mac with all ones */
+    /* dest mac with all ones */
     unsigned char dest_mac[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
     /* loop through all interfaces */
@@ -52,11 +57,22 @@ send_req_broadcast (int sockfd, int recvd_int_index) {
        if ((strcmp(if_name, "lo") != 0) && (strcmp(if_name, "eth0") != 0) 
                                         && curr->if_index != recvd_int_index) {
             
-            if(send_raw_frame (sockfd, curr->if_haddr, dest_mac, curr->if_index) < 0)
+            DEBUG(printf("Int name : %s, src mac: %s, destmac %s, index %d",
+                          if_name, curr->if_haddr, dest_mac, curr->if_index));
+            
+            /* construct the odr frame */
+            odrframe = construct_odr (__RREP, broad_id, hopcount, 0, 
+                                            rdisc_flag, 0, 0, dstip, srcip, NULL);
+            
+            if (odrframe == NULL) {
+                fprintf(stderr, "\nError creating odrframe");
+                return -1;
+            }
+            
+            if(send_raw_frame (sockfd, curr->if_haddr, dest_mac, curr->if_index, odrframe) < 0)
                 return -1;
         }
     }
-
     return 0;
 }
 
@@ -64,7 +80,7 @@ send_req_broadcast (int sockfd, int recvd_int_index) {
 /* send raw ethernet frame */
 int 
 send_raw_frame (int sockfd, char *src_macaddr, 
-                    char *dest_macaddr, int int_index) {
+                    char *dest_macaddr, int int_index, odr_frame_t *odrframe) {
 
     /*target address*/
     struct sockaddr_ll socket_address;
@@ -120,20 +136,20 @@ send_raw_frame (int sockfd, char *src_macaddr,
      * |Dest Mac | Src Mac | type id |
      * -------------------------------
      * */
-    memcpy((void*)buffer, (void*)dest_mac, ETH_ALEN);
-    memcpy((void*)(buffer+ETH_ALEN), (void*)src_mac, ETH_ALEN);
+    memcpy((void *)buffer, (void *)dest_mac, ETH_ALEN);
+    memcpy((void *)(buffer+ETH_ALEN), (void *)src_mac, ETH_ALEN);
     eh->h_proto = htons(USID_PROTO);
     
-    /*fill the frame with some data*/
-    for (j = 0; j < 1500; j++) {
-        data[j] = (unsigned char)((int) (255.0*rand()/(RAND_MAX+1.0)));
-    }
-
-    /*send the packet*/
+    /* copy the odr frame data into ethernet frame */
+    memcpy((void *)data, (void *)odrframe, sizeof(odr_frame_t));
+    
+    /* send the packet on wire */
     if ((send_result = sendto(sockfd, buffer, ETH_FRAME_LEN, 0, 
             (struct sockaddr*)&socket_address, sizeof(socket_address))) < 0) {
-        perror("\nError in Sending frame");     
+        
+        perror("\nError in Sending frame\n");     
     }
+    
     DEBUG(printf("\nEth frame sent\n"));
     
     return send_result;
@@ -309,5 +325,77 @@ insert_pending_queue (odr_frame_t *odrframe) {
     pending_queue_head       = entry;
     
     return 0;
+}
+
+/* convert the uint32 attribs from network to host order */
+int 
+convert_net_host_order(odr_frame_t* recvd_frame) {
+    assert(recvd_frame); 
+
+    recvd_frame->frame_type      = ntohl(recvd_frame->frame_type);
+    recvd_frame->broadcast_id    = ntohl(recvd_frame->broadcast_id);
+    recvd_frame->hop_count       = ntohl(recvd_frame->hop_count);
+    recvd_frame->payload_len     = ntohl(recvd_frame->payload_len);
+    recvd_frame->route_disc_flag = ntohl(recvd_frame->route_disc_flag);
+    recvd_frame->src_port        = ntohl(recvd_frame->src_port);
+    recvd_frame->dst_port        = ntohl(recvd_frame->dst_port);
+
+    DEBUG(printf("\n Type of frame : %d", recvd_frame->frame_type));
+    
+    return 0;
+}
+
+/* populate the recv_buf and populate the recvd_odr_frame */
+int
+process_recvd_frame (odr_frame_t **recvd_odr_frame, void *recv_buf) {
+    assert(recv_buf);
+    
+    /* buffer for ethernet frame */
+    void* buffer = (void*)malloc(ETH_FRAME_LEN);
+   
+    /* copy data to buffer */
+    memcpy(buffer, recv_buf, ETH_FRAME_LEN); 
+
+    /* userdata in ethernet frame */
+    unsigned char* data = buffer + 14;
+    
+    *recvd_odr_frame = (odr_frame_t *) data;
+    assert(*recvd_odr_frame); 
+    
+    /* convert from network to host order */
+    convert_net_host_order(*recvd_odr_frame); 
+
+    DEBUG(printf("Message Processed\n"));
+    return 0;
+}
+
+
+/* construct odr frame */
+odr_frame_t *
+construct_odr (int type, int bid, int hopcount, int len, int rdisc_flag, int srcport, 
+                                int dstport, char *dstip, char *srcip, char *payload) {
+    assert(dstip);
+    assert(srcip);
+    
+    /* if this is data frame and payload is null */
+    if(type == __DATA && payload == NULL) {
+        fprintf (stderr, "Invalid Payload"); 
+        return NULL;
+    }
+    
+    odr_frame_t *odr_frame     = (odr_frame_t *)calloc(1, sizeof(odr_frame_t));
+    odr_frame->frame_type      = htonl(type);
+    odr_frame->hop_count       = htonl(hopcount);
+    odr_frame->route_disc_flag = htonl(rdisc_flag);
+    odr_frame->src_port        = htonl(srcport);
+    odr_frame->dst_port        = htonl(dstport);
+    odr_frame->payload_len     = htonl(len);
+    strcpy(odr_frame->dest_ip, dstip);
+    strcpy(odr_frame->src_ip, srcip);
+    
+    if(type == __DATA)
+        strcpy(odr_frame->payload, payload);
+   
+   return odr_frame; 
 }
 
