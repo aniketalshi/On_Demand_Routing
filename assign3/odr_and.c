@@ -90,8 +90,10 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     assert(proc_addr);
     assert(sparams);
 
-    map_port_sp_t * map_entry;
-    
+    int             entry_present = 0;
+    map_port_sp_t   *map_entry;
+    r_entry_t       *route;
+
     printf("\n Received data from proc sunpath %s", proc_addr->sun_path);
     DEBUG(printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, 
                     sparams->destport, sparams->msg, sparams->destip));
@@ -111,6 +113,24 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
 
     
     //TODO: Send canonical IP of source
+ 
+    /* Check if the entry is already present */
+    entry_present = get_r_entry (sparams->destip, &route, 
+                                    sparams->route_disc_flag); 
+      
+    /* If the routing table is empty or if the entry is not present */
+    if (entry_present <= 0) {
+        //send RREQ
+        //insert msg in pending queue
+        return 1;
+    }
+    
+    /* If the entry is present in the routing table, send the packet */
+    if (entry_present > 0) {
+        //send packet
+        return 1;
+    }
+
     /* message to send payload message */
     send_req_broadcast (sockfd, -1, get_broadcast_id(), 0, 0, "1.2.3.4", "1.2.3.4");
     return 0;
@@ -165,6 +185,83 @@ handle_ethernet_msg (int sockfd, struct sockaddr_ll *proc_addr, void *recv_buf) 
     }
     
     return 0;
+}
+
+/* Handle the message received on the ethernet interface. */
+int
+handle_eth_msg (odr_frame_t *recv_buf, struct sockaddr_ll *odr_addr,
+                        int odr_sockfd) {
+    char self_ip[IP_LEN], sun_path[MAXLINE];
+    r_entry_t *r_entry;
+
+    if (get_self_ip (self_ip) < 0) {
+        return -1;
+    }
+
+
+
+    if (recv_buf->frame_type == __RREQ) {
+        
+        /* Check if the current node is the destination node. */
+        if (strcmp (recv_buf->dest_ip, self_ip) == 0){
+            //write to server/client
+            return 1;
+        }
+        
+        /* Check if an entry already exists in the routing table. */
+        if (get_r_entry (recv_buf->dest_ip, &r_entry, 0) > 0) {
+            //send RREP
+            return 1;
+        }
+        
+        /*
+        if (send_req_broadcast (odr_sockfd, odr_addr->sll_ifindex) < 0) {
+            printf ("Broadcast error!\n");
+            return -1;
+        }
+        return 1;
+        */
+    }
+    else if (recv_buf->frame_type == __RREP) {
+        
+        /* Get the next hop from the routing table. */
+        if (get_r_entry (recv_buf->dest_ip, &r_entry, 0) > 0) {
+            //send RREP
+            return 1;
+        }
+
+        /* If there is no entry in the routing table. */
+        // broadcast RREQ
+
+    }
+    else if (recv_buf->frame_type == __DATA) {
+        
+        /* Check if the current node is the destination node. */
+        if (strcmp (recv_buf->dest_ip, self_ip) == 0){
+            //write to server/client
+            return 1;
+        }
+        
+        if (get_file_name (recv_buf->dst_port, sun_path) < 0) {
+            printf ("Port not found!\n");
+            return -1;     
+        }
+        /* Check if the routing table entry can be updated. */
+        /* Write to the proper client file */
+    }
+    /*
+     * + Check if the destination is self.
+     *      + If so, write to the corresponding server/client
+     * + If dest not self, see if this is RREQ or RREP
+     *      + If RREQ:
+     *          + See if the entry for the dest exists in routing table
+     *          + If yes, prepare RREP.
+     *          + If no, broadcast RREQ over all other interfaces.
+     *      + If RREP:
+     *          + Forward the packet to the correct node after 
+     *                  looking up from routing table.
+     */
+    
 }
         
 
@@ -266,7 +363,8 @@ int main (int argc, const char *argv[]) {
                 perror("\nError in recvfrom");
                 return 0;
             }
-           
+            
+            //handle_eth_msg ((odr_frame_t *)recv_buf, &odr_addr, odr_sockfd);
 
             if(handle_ethernet_msg (proc_sockfd, &odr_addr, recv_buf) < 0)
                 return 0;
@@ -288,3 +386,4 @@ int main (int argc, const char *argv[]) {
 
     return 0;
 }
+
