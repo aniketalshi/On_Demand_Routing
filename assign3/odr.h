@@ -23,7 +23,7 @@
 
 /* Type of frame */
 #define __RREQ       1
-#define __RRPE       2
+#define __RREP       2
 #define __DATA       3
 #define __RREQ_ASENT 4
 
@@ -102,7 +102,8 @@ send_params_t * get_send_params(char *);         /* populate send params entries
 map_port_sp_t *fetch_entry (char *);             /* fetch port to sunpath mapping entry */
 int send_raw_frame (int , char *, char *, int);  /* Send raw ethernet frame */
 int send_req_broadcast (int , int);              /* broadcast the rreq packets */
-int get_r_entry (char *, r_entry_t **);          /* get the entry in routing table */
+int get_r_entry (char *, r_entry_t **, 
+                    int route_disc_flag);        /* get the entry in routing table */
 r_entry_t * insert_r_entry (char *, char *, 
                            int, int, int);       /*insert entry in routing table */
 

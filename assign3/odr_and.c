@@ -90,8 +90,10 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     assert(proc_addr);
     assert(sparams);
 
-    map_port_sp_t * map_entry;
-    
+    int             entry_present = 0;
+    map_port_sp_t   *map_entry;
+    r_entry_t       *route;
+
     printf("\n Received data from proc sunpath %s", proc_addr->sun_path);
     DEBUG(printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, 
                     sparams->destport, sparams->msg, sparams->destip));
@@ -101,20 +103,102 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
         fprintf(stderr, "unable to create entry in port sunpath table");
         return -1;
     }
-   
-    /* 1. Check if entry for this dest is there in routing table
-     * 2. If not, insert this msg in pending_queue
-     *    2.1 Flood RREQ
-     * 3. If entry is present, check validity
-     * 4. If all is well, send the ethernet frame on int in routing table
-     */
-
-
+ 
+    /* Check if the entry is already present */
+    entry_present = get_r_entry (sparams->destip, &route, 
+                                    sparams->route_disc_flag); 
+      
+    /* If the routing table is empty or if the entry is not present */
+    if (entry_present <= 0) {
+        //send RREQ
+        //insert msg in pending queue
+        return 1;
+    }
+    
+    /* If the entry is present in the routing table, send the packet */
+    if (entry_present > 0) {
+        //send packet
+        return 1;
+    }
 
     /* message to send payload message */
     //send_req_broadcast (sockfd, -1);
 
+}
 
+/* Handle the message received on the ethernet interface. */
+int
+handle_eth_msg (odr_frame_t *recv_buf, struct sockaddr_ll *odr_addr,
+                        int odr_sockfd) {
+    char self_ip[IP_LEN], sun_path[MAXLINE];
+    r_entry_t *r_entry;
+
+    if (get_self_ip (self_ip) < 0) {
+        return -1;
+    }
+
+
+
+    if (recv_buf->frame_type == __RREQ) {
+        
+        /* Check if the current node is the destination node. */
+        if (strcmp (recv_buf->dest_ip, self_ip) == 0){
+            //write to server/client
+            return 1;
+        }
+        
+        /* Check if an entry already exists in the routing table. */
+        if (get_r_entry (recv_buf->dest_ip, &r_entry, 0) > 0) {
+            //send RREP
+            return 1;
+        }
+        
+        if (send_req_broadcast (odr_sockfd, odr_addr->sll_ifindex) < 0) {
+            printf ("Broadcast error!\n");
+            return -1;
+        }
+        return 1;
+    }
+    else if (recv_buf->frame_type == __RREP) {
+        
+        /* Get the next hop from the routing table. */
+        if (get_r_entry (recv_buf->dest_ip, &r_entry, 0) > 0) {
+            //send RREP
+            return 1;
+        }
+
+        /* If there is no entry in the routing table. */
+        // broadcast RREQ
+
+    }
+    else if (recv_buf->frame_type == __DATA) {
+        
+        /* Check if the current node is the destination node. */
+        if (strcmp (recv_buf->dest_ip, self_ip) == 0){
+            //write to server/client
+            return 1;
+        }
+        
+        if (get_file_name (recv_buf->dst_port, sun_path) < 0) {
+            printf ("Port not found!\n");
+            return -1;     
+        }
+        /* Check if the routing table entry can be updated. */
+        /* Write to the proper client file */
+    }
+    /*
+     * + Check if the destination is self.
+     *      + If so, write to the corresponding server/client
+     * + If dest not self, see if this is RREQ or RREP
+     *      + If RREQ:
+     *          + See if the entry for the dest exists in routing table
+     *          + If yes, prepare RREP.
+     *          + If no, broadcast RREQ over all other interfaces.
+     *      + If RREP:
+     *          + Forward the packet to the correct node after 
+     *                  looking up from routing table.
+     */
+    
 }
 
 int main (int argc, const char *argv[]) {
@@ -201,12 +285,13 @@ int main (int argc, const char *argv[]) {
             send_params_t* sparams = get_send_params (buff);
             
             /* process this msg received from peer proc */
-            if(handle_peer_msg(proc_sockfd, &proc_addr, sparams) < 0)
+            if (handle_peer_msg(proc_sockfd, &proc_addr, sparams) < 0)
                 return 0;
         }
         
         /* receiving on ethernet interface */
         if (FD_ISSET(odr_sockfd, &currset)) {
+            
             printf("\n Stuck here"); 
             memset(recv_buf, 0, ETH_FRAME_LEN); 
             memset(&odr_addr, 0, sizeof(odr_addr));
@@ -217,9 +302,11 @@ int main (int argc, const char *argv[]) {
                 return 0;
             }
             
+
+
             printf("\nReceived the packet");
 
-
+            handle_eth_msg ((odr_frame_t *)recv_buf, &odr_addr, odr_sockfd);
 
             /* ODR process to send message to */
             /*
@@ -238,3 +325,4 @@ int main (int argc, const char *argv[]) {
 
     return 0;
 }
+

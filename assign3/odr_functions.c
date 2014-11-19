@@ -150,7 +150,7 @@ insert_r_entry (char *dest_ip, char *n_hop,
     r_entry_t *temp_r_entry;
 
     /* check if the entry already exists in the routing table */
-    if (get_r_entry (dest_ip, &temp_r_entry) >= 0) {
+    if (get_r_entry (dest_ip, &temp_r_entry, 0) >= 0) {
         
         /* check if entry is not null */
         assert(temp_r_entry);
@@ -180,21 +180,44 @@ insert_r_entry (char *dest_ip, char *n_hop,
     return r_ent;
 }
 
+/* Get the canonical IP Address of the current node. */
+int
+get_self_ip (char *can_ip) {
+
+    struct hwa_info *curr = Get_hw_struct_head(); 
+    char if_name[MAXLINE];
+    
+    /* loop through all interfaces */
+    for (; curr != NULL; curr = curr->hwa_next) {
+       
+       memset(if_name, 0, MAXLINE); 
+       /* if there are aliases in if name with colons, split them */
+       sscanf(curr->if_name, "%[^:]", if_name); 
+        
+        if (strcmp(if_name, "eth0") != 0) { 
+            strcpy(can_ip, inet_ntoa(((struct sockaddr_in *)curr->ip_addr)->sin_addr));
+            return 1;
+        }
+    }
+    return -1;
+}
+
 /* search ip address in routing table */
 int
-get_r_entry (char *dest_ip, r_entry_t **r_entry) {
+get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
     
     assert(dest_ip);
 
     /* if routing table is empty */
     if (!routing_table_head) 
-        return -1;
+        return 0;
     
     r_entry_t *curr = routing_table_head;
     int i = 0;
     
-     struct timeval currtime;
-     gettimeofday(&currtime, 0);
+    struct timeval currtime;
+    gettimeofday(&currtime, 0);
+    
     /* iterate over all entries in routing table */
     for (; curr != NULL; curr = curr->next) {
         
@@ -202,9 +225,10 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry) {
         if (strcmp (curr->destip, dest_ip) == 0) {
             
             /* check if entry is stale */
-            if ((currtime.tv_sec - curr->timestamp.tv_sec) < stale_param) {
+            if (((currtime.tv_sec - curr->timestamp.tv_sec) < stale_param) &&
+                        (!route_disc_flag)) {
                 *r_entry = curr;
-                return 0;
+                return 1;
             
             } else {
                 /* delete this entry */
@@ -221,13 +245,13 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry) {
     }
     
     /* if routing table is empty or entry not found */
-    return -1;
+    return 0;
 }
 
 /* lookup the frame in pending message queue based on broadcast id */
 odr_frame_t *
 lookup_pending_queue (int broadcast_id) {
-   if (!pending_queue_head)
+    if (!pending_queue_head)
        return NULL;
     
     pending_msgs_t *curr = pending_queue_head;
