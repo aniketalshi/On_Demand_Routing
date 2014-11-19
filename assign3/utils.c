@@ -3,6 +3,9 @@
 #include <assert.h>
 #include "utils.h"
 
+/* globals */
+char *self_ip_addr;
+
 /* function returns canonical ip */
 int 
 get_canonical_ip (char *serv_vm, char *canon_ip) {
@@ -206,3 +209,56 @@ convert_to_mac (char *src_macaddr) {
     }
     return mac;
 }
+
+
+/* get hw address from ip */
+char *
+get_hwaddr_from_int (int interface_no) {
+    
+    struct hwa_info *curr = Get_hw_struct_head(); 
+    for (; curr != NULL; curr = curr->hwa_next) {
+        
+        if (curr->if_index == interface_no) {
+            return curr->if_haddr;
+        }
+    }
+
+    return NULL;
+}
+
+/* Get the canonical IP Address of the current node. */
+char *
+get_self_ip () {
+    
+    if (self_ip_addr != NULL) 
+        return self_ip_addr;
+    
+    self_ip_addr = (char *)malloc(INET_ADDRSTRLEN);
+
+    struct hwa_info *curr = Get_hw_struct_head();
+    char if_name[MAXLINE];
+    
+    /* loop through all interfaces */
+    for (; curr != NULL; curr = curr->hwa_next) {
+        memset(if_name, 0, MAXLINE);
+        
+        /* if there are aliases in if name with colons, split them */
+        sscanf(curr->if_name, "%[^:]", if_name);
+        
+        if (strcmp(if_name, "eth0") == 0) {
+            inet_ntop(AF_INET, &( ((struct sockaddr_in *)curr->ip_addr)->sin_addr), 
+                                                      self_ip_addr, INET_ADDRSTRLEN);
+            assert(self_ip_addr); 
+            return self_ip_addr;
+        }
+     }
+    
+     /* if no canonical ip found */
+     DEBUG(printf("\nNo self canonical ip found"));
+     self_ip_addr = NULL;
+     return NULL;
+}
+
+
+
+

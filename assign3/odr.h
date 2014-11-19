@@ -103,7 +103,9 @@ map_port_sp_t *fetch_entry (char *);             /* fetch port to sunpath mappin
 
 
 int send_raw_frame (int, char *, char *, int, odr_frame_t*);  /* Send raw ethernet frame */
-int send_req_broadcast (int, int, int, int, int, char *, char *);              /* broadcast the rreq packets */
+
+/* broadcast the rreq packets */
+int send_req_broadcast (int, int, int, int, int, char *, char *);     
 
 
 int get_r_entry (char *, r_entry_t **);          /* get the entry in routing table */
@@ -114,7 +116,14 @@ odr_frame_t *lookup_pending_queue (int );        /* lookup the frame in pending_
 int insert_pending_queue (odr_frame_t *);        /* insert frame in pending queue */
 
 int process_recvd_frame (odr_frame_t **, void *); /* process recvd frame */
-odr_frame_t * construct_odr (int , int , int , int , int , int ,  /* construct and ODR frame */
+
+/* construct and ODR frame */
+odr_frame_t * construct_odr (int , int , int , int , int , int ,  
                               int , char *, char *, char *);
+
+int send_rrep_packet (int, odr_frame_t *);    /* send the reply packet */
+
+/* send the application payload message */
+int send_data_message (int , int , send_params_t *, r_entry_t *); 
 
 #endif /*__ODR_H*/

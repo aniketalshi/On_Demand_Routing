@@ -109,10 +109,10 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
      * 4. If all is well, send the ethernet frame on int in routing table
      */
 
-
-
+    
+    //TODO: Send canonical IP of source
     /* message to send payload message */
-    send_req_broadcast (sockfd, -1, get_broadcast_id(), 0, 0, "1.1.1.1", "1.2.3.4");
+    send_req_broadcast (sockfd, -1, get_broadcast_id(), 0, 0, "1.2.3.4", "1.2.3.4");
     return 0;
 
 }
@@ -120,15 +120,19 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
 /* handle message received over ethernet interface */
 int
 handle_ethernet_msg (int sockfd, struct sockaddr_ll *proc_addr, void *recv_buf) {
+    
+    assert(proc_addr);
+    assert(recv_buf);
 
     odr_frame_t *recvd_odr_frame;
+    
     if (process_recvd_frame (&recvd_odr_frame, recv_buf) < 0) {
         perror("\nError in processing recvd frame");
         return 0;
     }
     
     if(recvd_odr_frame == NULL) {
-        perror("\nError in processing recvd frame........");
+        perror("\nNull frame recvd");
         return 0;
     }
     
