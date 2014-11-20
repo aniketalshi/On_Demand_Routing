@@ -9,26 +9,102 @@
 int
 insert_map_port_sp (int portno, char *path) {
     assert(path);
-
-    map_port_sp_t *entry, *curr;
+    
+    DEBUG(printf("Inserting function\n"));
+    
+    map_port_sp_t *entry;
 
     entry = (map_port_sp_t *) calloc(1, sizeof(map_port_sp_t));
-    entry->portno        = portno;
+    entry->portno = portno;
     strncpy(entry->sun_path, path, strlen(path));
     gettimeofday(&entry->ts, NULL);
 
     /* if no entry in table */
     if (!port_spath_head) {
         port_spath_head = entry;
+        DEBUG(printf("Inserted in Table path %s\n", path));
         return 1;
     }
 
-    /* traverse till end of list */
-    for(curr = port_spath_head; curr->next != NULL; curr = curr->next); 
-
-    curr->next = entry;
+    /* insert at start of table */
+    entry->next = port_spath_head;
+    port_spath_head = entry;
+    
+    DEBUG(printf("Inserted in Table path %s\n", path));
     return 1;
 }
+
+/* send msg to peer process at requested port no */
+int 
+send_to_peer_process (int sockfd, char *sun_path, 
+                        char *src_ip, int src_port, char *payload) {
+    assert(sun_path);
+    assert(src_ip);
+    
+    struct sockaddr_un proc_addr;
+    
+    /* construct string to send to process */
+    void* str_seq = (void*)malloc(ETH_FRAME_LEN);
+    
+    /* TODO:add route disc flag here */
+    sprintf(str_seq, "%s,%d,%s,%d\n", src_ip, src_port, payload, 0);
+    
+    DEBUG(printf("\nPayload send to peer proc : %s\n", payload));
+
+    memset(&proc_addr, 0, sizeof(struct sockaddr_un));
+    
+    /* process to send message to */
+    proc_addr.sun_family = AF_LOCAL;
+    strcpy(proc_addr.sun_path, sun_path);
+
+    
+    /* write the data on socket */
+    if (sendto (sockfd, str_seq, strlen(str_seq), 0, 
+                    (struct sockaddr *) &proc_addr, SUN_LEN(&proc_addr)) <= 0) {
+        perror("\n Error in sendto");
+        return -1;
+    }
+    
+    DEBUG(printf("Data written on application socket\n"));
+    return 0;
+}
+
+
+/* process the received payload message */
+int 
+process_data_message (int proc_sockfd, int odr_sockfd, odr_frame_t* odrframe) {
+    assert(odrframe);
+    
+    map_port_sp_t *port_sp_entry; 
+     
+    /* retreive self canonical ip addr */
+    char *self_ip = get_self_ip();
+    if (self_ip == NULL) 
+        return -1;
+
+    /* if this data frame is for me */
+    if (strcmp(odrframe->dest_ip, self_ip) == 0) {
+        
+        /* retereive entry from sunpath to port table */
+        if ((port_sp_entry = fetch_entry_port (odrframe->dst_port)) == NULL) {
+            fprintf (stderr, "no sunpath for this port %d\n", odrframe->dst_port);
+            return -1;
+        }
+
+        printf("Sun Path entry for application %s\n", port_sp_entry->sun_path);
+        
+        /* send msg to peer process at requested port no 
+         * send source nodes ip address, port num and payload*/
+        if (send_to_peer_process (proc_sockfd, port_sp_entry->sun_path, 
+                                    odrframe->src_ip, odrframe->src_port, 
+                                                       odrframe->payload) < 0) {
+            fprintf (stderr, "Error sending data to application process");
+            return -1;
+        }
+    }
+    return 0;
+}
+
 
 /* send the application payload message */
 int
@@ -70,8 +146,6 @@ send_data_message (int sockfd, int src_port,
 }
 
 
-
-
 /* send the reply packet */
 int
 send_rrep_packet (int sockfd, odr_frame_t *frame) {
@@ -103,9 +177,8 @@ send_rrep_packet (int sockfd, odr_frame_t *frame) {
 
 /* broadcast the rreq packet received from this proc*/
 int 
-send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, int hopcount, 
-                            int rdisc_flag, char *dstip, char *srcip) {
-   
+send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, int src_port, int dstport,
+                      int hopcount, int rdisc_flag, char *dstip, char *srcip, char *payload) {
     assert(dstip);
     assert(srcip);
 
@@ -131,21 +204,20 @@ send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, int hopcount,
             printf ("\nRREQ Sent. Interface: %s, Broadcast id %d\n", if_name, broad_id);
             
             /* construct the odr frame */
-            odrframe = construct_odr (__RREP, broad_id, hopcount, 0, 
-                                            rdisc_flag, 0, 0, dstip, srcip, NULL);
-            
+            odrframe = construct_odr (__DATA, broad_id, hopcount, 0, rdisc_flag, 
+                                                    src_port, dstport, dstip, srcip, payload);
             if (odrframe == NULL) {
                 fprintf(stderr, "\nError creating odr frame");
                 return -1;
             }
             
-            if(send_raw_frame (sockfd, curr->if_haddr, dest_mac, curr->if_index, odrframe) < 0)
+            if(send_raw_frame (sockfd, curr->if_haddr, 
+                                dest_mac, curr->if_index, odrframe) < 0)
                 return -1;
         }
     }
     return 0;
 }
-
 
 /* send raw ethernet frame */
 int 

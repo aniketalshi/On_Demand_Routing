@@ -31,9 +31,26 @@ int get_next_portno() {
     return portno++;
 }
 
+/* fetch port to sunpath mapping entry using port*/
+map_port_sp_t *
+fetch_entry_port (int portno) {
+    map_port_sp_t *curr, *entry;
+
+    if (!port_spath_head) 
+        return NULL;
+
+    for (curr = port_spath_head; curr != NULL; curr = curr->next) {
+        if (curr->portno == portno) {
+            return curr;
+        }
+    }
+    return NULL;
+}
+
+
 /* Fetch entry from port to sunpath table */
 map_port_sp_t *
-fetch_entry (char *sun_path) {
+fetch_entry_path (char *sun_path) {
     
     assert(sun_path);
     map_port_sp_t *curr, *entry;
@@ -41,7 +58,7 @@ fetch_entry (char *sun_path) {
     if (!port_spath_head) 
         return NULL;
 
-    for (curr = port_spath_head; curr->next != NULL; curr = curr->next) {
+    for (curr = port_spath_head; curr != NULL; curr = curr->next) {
         if (strcmp(curr->sun_path, sun_path) == 0) {
             return curr;
         }
@@ -55,7 +72,8 @@ fetch_entry (char *sun_path) {
     gettimeofday(&entry->ts, NULL);
     
     /* insert this entry in table */
-    curr->next = entry;
+    entry->next = port_spath_head;
+    port_spath_head = entry;
     return entry;
 }
 
@@ -93,13 +111,18 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     int             entry_present = 0;
     map_port_sp_t   *map_entry;
     r_entry_t       *route;
+    char *self_ip = get_self_ip();
+    
+    if (self_ip == NULL) 
+        return -1;
+    
 
     printf("\n Received data from proc sunpath %s", proc_addr->sun_path);
     DEBUG(printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, 
                     sparams->destport, sparams->msg, sparams->destip));
     
     /* check if entry exist and if not insert new entry in port to sunpath table */
-    if((map_entry = fetch_entry (proc_addr->sun_path)) == NULL) {
+    if((map_entry = fetch_entry_path (proc_addr->sun_path)) == NULL) {
         fprintf(stderr, "unable to create entry in port sunpath table");
         return -1;
     }
@@ -115,31 +138,36 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     //TODO: Send canonical IP of source
  
     /* Check if the entry is already present */
-    entry_present = get_r_entry (sparams->destip, &route, 
-                                    sparams->route_disc_flag); 
-      
-    /* If the routing table is empty or if the entry is not present */
-    if (entry_present <= 0) {
-        //send RREQ
-        //insert msg in pending queue
-        return 1;
-    }
-    
-    /* If the entry is present in the routing table, send the packet */
-    if (entry_present > 0) {
-        //send packet
-        return 1;
-    }
+    //entry_present = get_r_entry (sparams->destip, &route, 
+    //                                sparams->route_disc_flag); 
+    //  
+    ///* If the routing table is empty or if the entry is not present */
+    //if (entry_present <= 0) {
+    //    //send RREQ
+    //    //insert msg in pending queue
+    //    return 1;
+    //}
+    //
+    ///* If the entry is present in the routing table, send the packet */
+    //if (entry_present > 0) {
+    //    //send packet
+    //    return 1;
+    //}
 
     /* message to send payload message */
-    send_req_broadcast (sockfd, -1, get_broadcast_id(), 0, 0, "1.2.3.4", "1.2.3.4");
+    if (send_req_broadcast (sockfd, -1, get_broadcast_id(), 
+                           map_entry->portno, sparams->destport, 
+                                0, 0, sparams->destip, self_ip, sparams->msg) < 0) {
+        fprintf(stderr, "Error in sending broadcast\n");
+        return -1;
+    }
     return 0;
-
 }
 
 /* handle message received over ethernet interface */
 int
-handle_ethernet_msg (int sockfd, struct sockaddr_ll *proc_addr, void *recv_buf) {
+handle_ethernet_msg (int proc_sockfd, int odr_sockfd, 
+                        struct sockaddr_ll *proc_addr, void *recv_buf) {
     
     assert(proc_addr);
     assert(recv_buf);
@@ -157,6 +185,8 @@ handle_ethernet_msg (int sockfd, struct sockaddr_ll *proc_addr, void *recv_buf) 
     }
     
     DEBUG(printf("\nReceived the packet %d", recvd_odr_frame->frame_type));
+    DEBUG(printf("\n destip %s port %d\n", recvd_odr_frame->dest_ip, 
+                                            recvd_odr_frame->dst_port));
     switch (recvd_odr_frame->frame_type) {
         case __RREQ: {
             printf("\n Request packet\n");
@@ -169,7 +199,12 @@ handle_ethernet_msg (int sockfd, struct sockaddr_ll *proc_addr, void *recv_buf) 
         }
 
         case __DATA: {
-            printf("\n Data Packet");
+            printf("Data Packet Received\n");
+ 
+            if(process_data_message (proc_sockfd, odr_sockfd, recvd_odr_frame) < 0) {
+                fprintf (stderr, "unable to process data\n");
+                return -1;
+            }
             break;
         }
 
@@ -282,7 +317,11 @@ int main (int argc, const char *argv[]) {
         fprintf(stderr, "Error inserting in port to sunpath map");
         return 0;
     }
-
+    
+    if(fetch_entry_port (__SERV_PORT) == NULL) {
+        fprintf(stderr, "Error inserting in port to sunpath map");
+        return 0;
+    }
     /* check if staleness parameter supplied */
     if (argc < 2) {
         fprintf(stderr, "Required args <staleness parameter>");
@@ -365,8 +404,7 @@ int main (int argc, const char *argv[]) {
             }
             
             //handle_eth_msg ((odr_frame_t *)recv_buf, &odr_addr, odr_sockfd);
-
-            if(handle_ethernet_msg (proc_sockfd, &odr_addr, recv_buf) < 0)
+            if(handle_ethernet_msg (proc_sockfd, odr_sockfd, &odr_addr, recv_buf) < 0)
                 return 0;
 
             /* ODR process to send message to */

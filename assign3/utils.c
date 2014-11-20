@@ -38,12 +38,18 @@ get_broadcast_id() {
 
 /* API for receiving message */
 int
-msg_recv (int sockfd, char *msg, char *destip, int destport) {
-    fd_set        currset; 
-    char buff[MAXLINE];
+msg_recv (int sockfd, char* msg_buf, char *destip, int *destport, msg_params_t *tt) {
+    
+    assert(destip);
+    assert(destport);
+    assert(msg_buf);
+
+    fd_set currset; 
+    char buff[MAXLINE], msg[MAXLINE], ip[IP_LEN], port[10];
     struct sockaddr_un proc_addr;
     int socklen;
-
+    char flag[2];
+    
     socklen = sizeof (struct sockaddr_un);
     FD_ZERO(&currset);
     FD_SET (sockfd, &currset);    
@@ -59,6 +65,7 @@ msg_recv (int sockfd, char *msg, char *destip, int destport) {
     /* receiving from odr process */
     if (FD_ISSET(sockfd, &currset)) {
         memset(buff, 0, MAXLINE); 
+        memset(msg, 0, MAXLINE); 
         memset(&proc_addr, 0, sizeof(proc_addr));
 
         /* block on recvfrom. collect info in 
@@ -68,9 +75,22 @@ msg_recv (int sockfd, char *msg, char *destip, int destport) {
             perror("Error in recvfrom");
             return 0;
         }
-        printf("\n Received msg from ODR: %s", buff);
+        
+        if (buff == NULL) {
+            printf("Null message received\n");
+            return -1;
+        }
+        
+        sscanf(buff, "%[^','],%[^','],%[^','],%s", ip, port, msg, flag); 
+        
+        *destport = atoi(port);
+        strncpy(msg_buf, msg, MAXLINE); 
+        strncpy(destip, ip, MAXLINE);
+        
+        strcpy(tt->msg, msg);
+        strcpy(tt->cli_ip, ip);
+        tt->port = atoi(port);
     } 
-    
 }
 
 /* API for sending message */
@@ -99,7 +119,10 @@ msg_send (int sockfd, char* destip, int destport,
     
     return 0;
 }
-
+/***********************************************************************
+ * function get_hw_addrs() has been copied from Implementation given 
+ *  in a directory on minix
+ ***********************************************************************/
 
 struct hwa_info *
 get_hw_addrs()

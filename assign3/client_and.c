@@ -10,12 +10,17 @@
 #define __SERV_PORT 5500
 #define VMNAME_LEN 10
 #define IP_LEN     50
+#define PAYLOAD_SIZE 1440
+
 
 int main (int argc, const char* argv[]) {
     
-    int fp, cli_sockfd;
+    int fp, cli_sockfd, cli_port;
     struct sockaddr_un cliaddr;
-    char serv_vm[VMNAME_LEN], canon_ip[IP_LEN];
+    char serv_vm[VMNAME_LEN], canon_ip[IP_LEN], cli_ip[IP_LEN], msg[MAXLINE];
+    
+    msg_params_t mparams;
+    memset(&mparams, 0, sizeof(msg_params_t));
     
     /* temporary sun_path name for binding socket */
     char tempfile[] = "/tmp/file_and_XXXXXX";
@@ -58,6 +63,12 @@ int main (int argc, const char* argv[]) {
         
         DEBUG(printf("\n VM name : %s canonical IP: %s", serv_vm, canon_ip));
         msg_send(cli_sockfd, canon_ip, __SERV_PORT, "hello world", 0);
+        
+        memset (&msg, 0, MAXLINE);
+        /* sit on message recv */
+        msg_recv (cli_sockfd, msg, cli_ip, &cli_port, &mparams);
+        printf ("\nTime received from server%s\n", mparams.msg);
+        break;
     }
 
     unlink(tempfile);

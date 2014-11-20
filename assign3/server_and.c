@@ -17,7 +17,9 @@ int main (int argc, const char* argv[]) {
     struct  sockaddr_un servaddr;
     char    serv_vm[VMNAME_LEN], msg[MAXLINE], cli_ip[IP_LEN];
     time_t  ticks;
-
+    
+    msg_params_t mparams;
+    memset(&mparams, 0, sizeof(msg_params_t));
     unlink (__UNIX_SERV_PATH);
     
     /* create a UNIX Domain socket */
@@ -34,16 +36,16 @@ int main (int argc, const char* argv[]) {
     /* Bind the UNIX Domain socket */
     Bind (serv_sockfd, (SA *)&servaddr, SUN_LEN(&servaddr));
     printf("\n Unix Domain socket %d\n", serv_sockfd); 
-    
+     
     while (1) {
         
-        msg_recv (serv_sockfd, msg, cli_ip, cli_port);
-        
+        msg_recv (serv_sockfd, msg, cli_ip, &cli_port, &mparams);
+        DEBUG(printf("\nMessage received %s\n", msg));
         ticks = time(NULL);
         snprintf(msg, sizeof(msg), "%.24s\r\n", ctime(&ticks));
         
         /* send the current timestamp to client through ODR API */
-        msg_send(serv_sockfd, cli_ip, cli_port, msg, 0); 
+        msg_send (serv_sockfd, cli_ip, cli_port, msg, 0); 
     }
 
     unlink(__UNIX_SERV_PATH);

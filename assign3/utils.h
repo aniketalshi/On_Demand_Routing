@@ -22,6 +22,8 @@
 #define	IF_HADDR	 6	/* same as IFHWADDRLEN in <net/if.h> */
 
 #define	IP_ALIAS  	 1	/* hwa_addr is an alias */
+#define IP_LEN     50
+#define PAYLOAD_SIZE 1440
 
 #define __DEBUG 1
 
@@ -49,6 +51,11 @@ extern char * self_ip_addr;
 /*********************************************************************/
 
 
+typedef struct msg_recv_params {
+    char cli_ip[IP_LEN], msg[MAXLINE];
+    int port;
+} msg_params_t;
+
 /* functions for interface indexes */
 struct hwa_info	*get_hw_addrs();
 struct hwa_info	*Get_hw_addrs();
@@ -62,5 +69,6 @@ char *convert_to_mac(char *);
 int get_broadcast_id();
 char *get_hwaddr_from_int(int);
 char * get_self_ip ();
+int msg_recv (int , char*, char *, int *, msg_params_t *);
 
 #endif /* __UTILS_H */

@@ -51,7 +51,6 @@ typedef struct send_params {
     int  route_disc_flag;
 }send_params_t;
 
-
 /************** Routing table structure ***********************/
 /* routing table entry struct */
 typedef struct r_entry {
@@ -97,14 +96,15 @@ pending_msgs_t *pending_queue_head;
 /* staleness parameter */
 extern int stale_param;
 
-int insert_map_port_sp (int , char *);           /* insert entry in map */
-send_params_t * get_send_params(char *);         /* populate send params entries */
-map_port_sp_t *fetch_entry (char *);             /* fetch port to sunpath mapping entry */
+int insert_map_port_sp (int , char *);        /* insert entry in map */
+send_params_t * get_send_params(char *);      /* populate send params entries */
+map_port_sp_t *fetch_entry_path (char *);     /* fetch port to sunpath mapping entry using path */
+map_port_sp_t *fetch_entry_port (int);        /* fetch port to sunpath mapping entry using port*/
 
 int send_raw_frame (int, char *, char *, int, odr_frame_t*);  /* Send raw ethernet frame */
 
 /* broadcast the rreq packets */
-int send_req_broadcast (int, int, int, int, int, char *, char *);     
+int send_req_broadcast (int, int, int, int, int, int, int, char *, char *, char *);     
 
 int get_r_entry (char *, r_entry_t **, int );    /* get the entry in routing table */
 r_entry_t * insert_r_entry (char *, char *, 
@@ -113,7 +113,7 @@ r_entry_t * insert_r_entry (char *, char *,
 odr_frame_t *lookup_pending_queue (int );        /* lookup the frame in pending_queue */
 int insert_pending_queue (odr_frame_t *);        /* insert frame in pending queue */
 
-int process_recvd_frame (odr_frame_t **, void *); /* process recvd frame */
+int process_recvd_frame (odr_frame_t **,void *); /* process recvd frame */
 
 /* construct and ODR frame */
 odr_frame_t * construct_odr (int , int , int , int , int , int ,  
@@ -123,5 +123,11 @@ int send_rrep_packet (int, odr_frame_t *);    /* send the reply packet */
 
 /* send the application payload message */
 int send_data_message (int , int , send_params_t *, r_entry_t *); 
+
+/* send msg to peer process at requested port no */
+int send_to_peer_process (int, char *, char *, int, char *);
+
+/* process the received payload message */
+int process_data_message (int , int , odr_frame_t* );
 
 #endif /*__ODR_H*/
