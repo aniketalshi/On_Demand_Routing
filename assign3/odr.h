@@ -106,8 +106,8 @@ int send_req_broadcast (int, int, int, int, int, char *, char *);              /
 
 int get_r_entry (char *, r_entry_t **, 
                     int route_disc_flag);        /* get the entry in routing table */
-r_entry_t * insert_r_entry (char *, char *, 
-                           int, int, int);       /* insert entry in routing table */
+int insert_r_entry (odr_frame_t *, r_entry_t *, 
+                              int, char*);       /* insert entry in routing table */
 
 odr_frame_t *lookup_pending_queue (int );        /* lookup the frame in pending_queue */
 int insert_pending_queue (odr_frame_t *);        /* insert frame in pending queue */
