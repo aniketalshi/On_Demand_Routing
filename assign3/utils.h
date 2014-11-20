@@ -43,6 +43,9 @@ struct hwa_info {
 
 /* head of struct hwa_info */
 struct hwa_info *hwa_struct_head;
+
+/* self canonical ip */
+extern char * self_ip_addr;
 /*********************************************************************/
 
 
@@ -57,5 +60,7 @@ int get_canonical_ip (char *, char *);
 int msg_send (int, char*, int, char*, int );
 char *convert_to_mac(char *);
 int get_broadcast_id();
+char *get_hwaddr_from_int(int);
+char * get_self_ip ();
 
 #endif /* __UTILS_H */

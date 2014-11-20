@@ -30,13 +30,84 @@ insert_map_port_sp (int portno, char *path) {
     return 1;
 }
 
+/* send the application payload message */
+int
+send_data_message (int sockfd, int src_port, 
+                    send_params_t *sparams, r_entry_t *entry) {
+
+    assert(sparams);
+    assert(entry);
+    
+    char *src_ip, *src_mac;
+    odr_frame_t *odrframe;
+    
+    
+    if ((src_ip = get_self_ip()) == NULL) {
+        return -1;
+    }
+    /* construct ODR Frame */
+    if ((odrframe = construct_odr (__DATA, entry->broadcast_id, 0, PAYLOAD_SIZE, 
+                            sparams->route_disc_flag, src_port, sparams->destport, 
+                                        sparams->destip, src_ip , sparams->msg)) == NULL) {
+        fprintf(stderr, "error constructing odr frame\n");
+        return -1;
+    }
+    
+    /* get mac address from interface num */
+    if ((src_mac = get_hwaddr_from_int (entry->if_no)) == NULL) {
+        fprintf(stderr, "error retreiving mac address\n");
+        return -1;
+    }
+    
+    /* send raw frame on wire */
+    if (send_raw_frame (sockfd, src_mac, 
+                         entry->next_hop, entry->if_no, odrframe) < 0) {
+        fprintf(stderr, "error sending raw frame on wire\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+
+
+
+/* send the reply packet */
+int
+send_rrep_packet (int sockfd, odr_frame_t *frame) {
+
+    assert(frame);
+    r_entry_t *entry;
+    char src_mac[HW_ADDR];
+
+    /* check if routing entry exists */
+    if (get_r_entry(frame->src_ip, &entry, 0) > 0) {
+        assert(entry);
+        
+        memset (src_mac, 0, HW_ADDR);
+        /* send the reply on int in routing table */  
+        memcpy(src_mac, get_hwaddr_from_int(entry->if_no), HW_ADDR);
+        
+        DEBUG(printf("\nHW ADDR for sending: %s",
+                    convert_to_mac(get_hwaddr_from_int(entry->if_no))));
+
+        printf ("\nRREP Sent. Interface index : %d\n", entry->if_no);
+        
+        /* send odr frame */
+        if(send_raw_frame (sockfd, src_mac, entry->next_hop, entry->if_no, frame) < 0)
+            return -1;
+    }
+    return 0;
+}
+
+
 /* broadcast the rreq packet received from this proc*/
 int 
 send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, int hopcount, 
-                            int rdisc_flag, char* srcip, char *dstip) {
+                            int rdisc_flag, char *dstip, char *srcip) {
    
-    assert(srcip);
     assert(dstip);
+    assert(srcip);
 
     struct hwa_info *curr = Get_hw_struct_head(); 
     char if_name[MAXLINE];
@@ -57,15 +128,14 @@ send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, int hopcount,
        if ((strcmp(if_name, "lo") != 0) && (strcmp(if_name, "eth0") != 0) 
                                         && curr->if_index != recvd_int_index) {
             
-            DEBUG(printf("Int name : %s, src mac: %s, destmac %s, index %d",
-                          if_name, curr->if_haddr, dest_mac, curr->if_index));
+            printf ("\nRREQ Sent. Interface: %s, Broadcast id %d\n", if_name, broad_id);
             
             /* construct the odr frame */
             odrframe = construct_odr (__RREP, broad_id, hopcount, 0, 
                                             rdisc_flag, 0, 0, dstip, srcip, NULL);
             
             if (odrframe == NULL) {
-                fprintf(stderr, "\nError creating odrframe");
+                fprintf(stderr, "\nError creating odr frame");
                 return -1;
             }
             
@@ -190,28 +260,6 @@ insert_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t *r_entry,
     routing_table_head = r_entry;
 
     return 1;
-}
-
-/* Get the canonical IP Address of the current node. */
-int
-get_self_ip (char *can_ip) {
-
-    struct hwa_info *curr = Get_hw_struct_head(); 
-    char if_name[MAXLINE];
-    
-    /* loop through all interfaces */
-    for (; curr != NULL; curr = curr->hwa_next) {
-       
-       memset(if_name, 0, MAXLINE); 
-       /* if there are aliases in if name with colons, split them */
-       sscanf(curr->if_name, "%[^:]", if_name); 
-        
-        if (strcmp(if_name, "eth0") != 0) { 
-            strcpy(can_ip, inet_ntoa(((struct sockaddr_in *)curr->ip_addr)->sin_addr));
-            return 1;
-        }
-    }
-    return -1;
 }
 
 /* Check if the routing table entry needs to be updated, if so update it.*/

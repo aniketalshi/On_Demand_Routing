@@ -103,6 +103,16 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
         fprintf(stderr, "unable to create entry in port sunpath table");
         return -1;
     }
+   
+    /* 1. Check if entry for this dest is there in routing table
+     * 2. If not, insert this msg in pending_queue
+     *    2.1 Flood RREQ
+     * 3. If entry is present, check validity
+     * 4. If all is well, send the ethernet frame on int in routing table
+     */
+
+    
+    //TODO: Send canonical IP of source
  
     /* Check if the entry is already present */
     entry_present = get_r_entry (sparams->destip, &route, 
@@ -122,7 +132,7 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     }
 
     /* message to send payload message */
-    send_req_broadcast (sockfd, -1, get_broadcast_id(), 0, 0, "1.1.1.1", "1.2.3.4");
+    send_req_broadcast (sockfd, -1, get_broadcast_id(), 0, 0, "1.2.3.4", "1.2.3.4");
     return 0;
 
 }
@@ -145,13 +155,13 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                         struct sockaddr_ll *odr_addr, void *recv_buf) {
 
     odr_frame_t *recvd_odr_frame;
-    char self_ip[IP_LEN], sun_path[MAXLINE];
+    char *self_ip, sun_path[MAXLINE];
     char *next_hop;
     r_entry_t *r_entry;
     int dest_entry_present = 0, src_entry_present = 0, intf_n = 0;
     
     /* get IP Address of the current node. */
-    if (get_self_ip (self_ip) < 0) {
+    if ((self_ip = get_self_ip ()) == NULL) {
         return -1;
     }
 
@@ -167,7 +177,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
     }
     
     if(recvd_odr_frame == NULL) {
-        perror("\nError in processing recvd frame........");
+        perror("\nNull frame recvd");
         return 0;
     }
     
