@@ -229,7 +229,9 @@ send_raw_frame (int sockfd, char *src_macaddr,
 int
 update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry, 
                     int intf_n, char *next_hop) {
-    
+
+    //TODO: handle RREP packets: src and dest reversed.
+
     strcpy(r_entry->destip, recv_buf->src_ip);
     strcpy(r_entry->next_hop, next_hop);
     gettimeofday(&(r_entry->timestamp), 0);
