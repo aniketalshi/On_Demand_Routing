@@ -154,14 +154,28 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
     assert(entry);
     char *src_mac, *self_ip, *vmname;
     
+    int srcport = frame->src_port;
+    int dstport = frame->dst_port;
+    
+    char srcip[INET_ADDRSTRLEN], dstip[INET_ADDRSTRLEN]; 
 
+    strncpy(srcip, frame->src_ip, INET_ADDRSTRLEN);
+    strncpy(dstip, frame->dest_ip, INET_ADDRSTRLEN);
+    
+    /* if we are the final destination node, swap srcip - dstip, srcport - dstport */
     if (swap) {
-        if ((frame = construct_odr (__RREP, frame->broadcast_id, hop_count, frame->payload_len, 0, frame->dst_port, 
-                             frame->src_port, frame->src_ip, frame->dest_ip, frame->payload)) == NULL) {
-            fprintf(stderr, "Error creating rrep");
-            return -1;
-        }
+        srcport = frame->dst_port;
+        dstport = frame->src_port;
+        strncpy(srcip, frame->dest_ip, INET_ADDRSTRLEN);
+        strncpy(dstip, frame->src_ip, INET_ADDRSTRLEN);
+    } 
+    
+    if ((frame = construct_odr (__RREP, frame->broadcast_id, hop_count, frame->payload_len, 0, srcport, 
+                                  dstport, dstip, srcip, frame->payload)) == NULL) {
+        fprintf(stderr, "Error creating rrep");
+        return -1;
     }
+    
     /* get own mac from interface num */
     src_mac = get_hwaddr_from_int (entry->if_no);
 
@@ -178,6 +192,7 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
 
     DEBUG(printf("\n RREP Sent from node : %s. Outgoing interface %d\n",
                                                   frame->src_ip, entry->if_no));
+    DEBUG(printf("\nType %d", frame->frame_type));
     return 0;
 }
 
@@ -430,19 +445,21 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
 /* lookup the frame in pending message queue based on broadcast id */
 //TODO: Modify lookup pending queue logic
 odr_frame_t *
-lookup_pending_queue (int broadcast_id) {
+lookup_pending_queue (char *destip) {
+    assert(destip);
+
     if (!pending_queue_head)
        return NULL;
 
     
-    DEBUG(printf("\nLooking in pending queue %d\n", broadcast_id));
+    DEBUG(printf("\nLooking in pending queue for dest %s\n", destip));
     pending_msgs_t *curr = pending_queue_head;
     
     for(; curr != NULL; curr = curr->next) {
         assert(curr->odrframe);
         
         /* if we have found our node */
-        if (curr->broadcast_id == broadcast_id) {
+        if (strcmp(curr->odrframe->dest_ip, destip) == 0) {
             
             /* if this is the head of queue */
             if (curr == pending_queue_head) {
@@ -472,8 +489,8 @@ insert_pending_queue (odr_frame_t *odrframe, int broad_id) {
     assert(odrframe);
     
     /* if entry is already present in queue */
-    if (lookup_pending_queue (odrframe->broadcast_id) != NULL)
-        return 0;
+    //if (lookup_pending_queue (odrframe->dest_ip) != NULL)
+    //    return 0;
    
     pending_msgs_t *entry = calloc(1, sizeof(pending_msgs_t));
     

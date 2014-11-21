@@ -118,7 +118,8 @@ int check_r_entry (odr_frame_t *, r_entry_t *, int , unsigned char *);
 /* broadcast the rreq packets */
 int send_req_broadcast (int, int, int, int, int, int, int, char *, char *, char *);     
 
-odr_frame_t *lookup_pending_queue (int);        /* lookup the frame in pending_queue */
+odr_frame_t * lookup_pending_queue (char *);/* lookup the frame in pending_queue */
+
 int insert_pending_queue (odr_frame_t *, int);        /* insert frame in pending queue */
 
 int process_recvd_frame (odr_frame_t **,void *); /* process recvd frame */

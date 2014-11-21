@@ -316,11 +316,13 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             if (strcmp (recvd_odr_frame->dest_ip, self_ip) == 0) {
                 
                /* Look for msg in msg pending queue for this destination node and port */
-               if ((frame = lookup_pending_queue (recvd_odr_frame->broadcast_id)) != NULL) {
+               if ((frame = lookup_pending_queue (recvd_odr_frame->src_ip)) != NULL) {
                     
-                    DEBUG(printf("\nFound message in pending queue\n"));
                     /* this parked frame is an RREP frame */
                     if (frame->frame_type == __RREP) {
+
+                        DEBUG(printf("\nFound message in pending queue\n"));
+                        DEBUG(printf("\nSending out frame with type:%d\n", frame->frame_type));
 
                         /* Forward the rrep packet */
                         if (send_rrep_packet (odr_sockfd, frame, 
@@ -359,7 +361,8 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                 /* If an entry for this destination is not presnt, flood out RREQ */
                 assert(recvd_odr_frame);
                 printf ("\nNo Entry in table for node : %s. Flooding RREQ.\n", dst_vmname);
-               
+                
+                /* this RREQ will have new broadcast id */
                 broadcast_id = get_broadcast_id();
 
                 /* Insert the RREP packet in msg queue */
@@ -441,7 +444,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
         }
 
         default: {
-            printf("\n Error in packet type");
+            printf("\n Error in packet type %d", recvd_odr_frame->frame_type);
             return -1;
         }
     }
