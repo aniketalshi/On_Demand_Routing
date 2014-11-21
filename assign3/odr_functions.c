@@ -152,8 +152,8 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
 
     assert(frame);
     assert(entry);
-    char *src_mac; 
-
+    char *src_mac, *self_ip, *vmname;
+    
     if ((frame = construct_odr (__RREP, 0, hop_count, frame->payload_len, 0, frame->dst_port, 
                          frame->src_port, frame->src_ip, frame->dest_ip, frame->payload)) == NULL) {
         fprintf(stderr, "Error creating rrep");
@@ -162,12 +162,19 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
     
     /* get own mac from interface num */
     src_mac = get_hwaddr_from_int (entry->if_no);
+
+    /* get own ip addr */
+    self_ip = get_self_ip();
+    assert(self_ip);
+    /* get name corresponding to this ip */
+    vmname = get_name_ip(self_ip);
+    assert(vmname);
     
     /* send raw frame on wire */     
     if(send_raw_frame (sockfd, src_mac, entry->next_hop, entry->if_no, frame) < 0)
         return -1;
 
-    DEBUG(printf("\n RREP Sent. Src IP: %s. Outgoing interface %d\n",
+    DEBUG(printf("\n RREP Sent from node : %s. Outgoing interface %d\n",
                                                   frame->src_ip, entry->if_no));
     return 0;
 }
@@ -537,6 +544,7 @@ construct_odr (int type, int bid, int hopcount, int len, int rdisc_flag, int src
     odr_frame_t *odr_frame     = (odr_frame_t *)calloc(1, sizeof(odr_frame_t));
     odr_frame->frame_type      = htonl(type);
     odr_frame->hop_count       = htonl(hopcount);
+    odr_frame->broadcast_id    = htonl(bid);
     odr_frame->route_disc_flag = htonl(rdisc_flag);
     odr_frame->src_port        = htonl(srcport);
     odr_frame->dst_port        = htonl(dstport);
@@ -567,8 +575,6 @@ print_routing_table() {
             "===================================================\n");
     printf("-----------------------------------------------"
             "----------------------------------------------------\n");
-    
-
     printf("| %15s | %20s | %5s | %5s | %5s | %30s |\n", "destination ip", "next hop",
                                                             "ifno", "hops", 
                                                             "b_id",

@@ -101,6 +101,13 @@ get_file_name (int portno, char *path) {
     return -1;
 }
 
+/********************************************************************* 
+ * 1. Check if entry for this dest is there in routing table
+ * 2. If not, insert this msg in pending_queue
+ *    2.1 Flood RREQ
+ * 3. If entry is present, check validity
+ * 4. If all is well, send the ethernet frame on int in routing table
+ ********************************************************************/
 /* handle request from peer process received by ODR */
 int
 handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr, 
@@ -117,7 +124,6 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     if (self_ip == NULL) 
         return -1;
     
-
     //printf("\nData received from peer process. SUN_PATH:  \"./%s\"", proc_addr->sun_path);
     //DEBUG(printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, 
      //               sparams->destport, sparams->msg, sparams->destip));
@@ -127,16 +133,8 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
         fprintf(stderr, "unable to create entry in port sunpath table");
         return -1;
     }
-   
-    /* 1. Check if entry for this dest is there in routing table
-     * 2. If not, insert this msg in pending_queue
-     *    2.1 Flood RREQ
-     * 3. If entry is present, check validity
-     * 4. If all is well, send the ethernet frame on int in routing table
-     */
 
     
-    //TODO: Send canonical IP of source
     /* Check if the entry is already present */
     entry_present = get_r_entry (sparams->destip, &route, 
                                     sparams->route_disc_flag); 
@@ -144,6 +142,8 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     
     /* If the routing table is empty or if the entry is not present */
     if (entry_present <= 0) {
+        DEBUG(printf ("\n Entry is not present in table. Will be sending RREQ \n"));
+        
         /* send the RREQ packet*/
         if (send_req_broadcast (sockfd, -1, get_broadcast_id(), 
                                   map_entry->portno, sparams->destport, 
@@ -154,18 +154,18 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
         
         
         /* construct odr frame for this payload msg */ 
-        if ((odrframe = construct_odr (__DATA, 0, 0, PAYLOAD_SIZE, sparams->route_disc_flag, 
-                                                    map_entry->portno, sparams->destport, 
-                                                    sparams->destip, self_ip, sparams->msg)) == NULL) {
-            fprintf(stderr, "Error in constructing frame\n");
-            return -1;
-        }
-        
-        //insert msg in pending queue
-        if (insert_pending_queue (odrframe) < 0) {
-            fprintf(stderr, "Error inserting frame in pending queue\n");
-            return -1;
-        }
+       // if ((odrframe = construct_odr (__DATA, 0, 0, PAYLOAD_SIZE, sparams->route_disc_flag, 
+       //                                             map_entry->portno, sparams->destport, 
+       //                                             sparams->destip, self_ip, sparams->msg)) == NULL) {
+       //     fprintf(stderr, "Error in constructing frame\n");
+       //     return -1;
+       // }
+       // 
+       // //insert msg in pending queue
+       // if (insert_pending_queue (odrframe) < 0) {
+       //     fprintf(stderr, "Error inserting frame in pending queue\n");
+       //     return -1;
+       // }
         
         return 1;
     } else { /* If the entry is present in the routing table, send the packet */
@@ -234,7 +234,6 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
     assert(src_vmname);
     assert(dst_vmname);
 
-    //DEBUG(printf("\nMessage recvd from %s port %d\n", vmname, recvd_odr_frame->dst_port));
     
     switch (recvd_odr_frame->frame_type) {
         case __RREQ: {
@@ -267,6 +266,9 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
 
             /* Check if an entry already exists in the routing table for given destination */
             if (dest_entry_present > 0) {
+                
+                printf ("\nEntry exists in table for node : %s", dst_vmname);
+                
                 /* send the rrep */
                 if (send_rrep_packet (odr_sockfd, recvd_odr_frame, 
                                      src_r_entry, dest_r_entry->no_hops) < 0) {
@@ -292,59 +294,48 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                 break;
             }
 
-            ////TODO: Handle Already_sent flag.
-            //
-           //// if (send_req_broadcast (odr_sockfd, odr_addr->sll_ifindex,
-           ////             recvd_odr_frame->broadcast_id,
-           ////             recvd_odr_frame->hop_count,
-           ////             0, recvd_odr_frame->src_ip,
-           ////             recvd_odr_frame->dest_ip) < 0) {
-           ////     printf ("Broadcast error!\n");
-           ////     return -1;
-           //// }              
-            //insert_pending_queue (recvd_odr_frame);
-
             break;
         }
         
         case __RREP: {
-            printf("\n Reply packet\n");
             
-            /* Check if we can use information about destination IP. */
+            DEBUG(printf("\n Received RREP from %s, intended for %s\n", 
+                                                        src_vmname, dst_vmname));
+            
+            if (src_entry_present > 0) {
+                /* If entry for src ip is present, check if we can update the entry */ 
+                check_r_entry (recvd_odr_frame, src_r_entry, intf_n, odr_addr->sll_addr); 
+            } else {
+                /* Insert the new information about src IP in r_table. */
+                insert_r_entry (recvd_odr_frame, &src_r_entry, intf_n, odr_addr->sll_addr);
+            }
+            
+            
+            /* check if this RREP is intended for me */
+            if (strcmp (recvd_odr_frame->dest_ip, self_ip) == 0) {
+                
+               /* Look for msg in msg pending queue for this destination node and port */
+               break;
+            }
+
+            /*************I am an intermediate node. Foward this RREP *******************/
+            
+            
+            /* Check if an entry already exists in the routing table for given destination */
             if (dest_entry_present > 0) {
 
-               // check_r_entry (recvd_odr_frame, *r_entry, intf_n,
-                //                        next_hop);
-            }
-            else {
-
-                /* Insert the new information about dest IP in r_table. */
-                //insert_r_entry (recvd_odr_frame, &r_entry, intf_n, 
-                //        next_hop);
-            }
-
-            /* Check if the current node is the dest node. */
-            if (strcmp (recvd_odr_frame->src_ip, self_ip) == 0) {
-               
-                /* If the destination entry is not present. */
-                if (!dest_entry_present) {
-                    
-                   // if (send_req_broadcast (odr_sockfd, odr_addr->sll_ifindex,
-                   //             recvd_odr_frame->broadcast_id,
-                   //             recvd_odr_frame->hop_count,
-                   //             0, recvd_odr_frame->src_ip,
-                   //             recvd_odr_frame->dest_ip) < 0) {
-                   //     printf ("Broadcast error!\n");
-                   //     return -1;
-                   // }     
-                    insert_pending_queue (recvd_odr_frame);
-                    break;
+                printf ("\nEntry exists in table for node : %s", dst_vmname);
+                assert(src_r_entry);    
+                assert(dest_r_entry);    
+                
+                /* send the rrep */
+                if (send_rrep_packet (odr_sockfd, recvd_odr_frame, 
+                                     dest_r_entry, src_r_entry->no_hops) < 0) {
+                    fprintf(stderr, "Error sending RREP packet");
+                    return -1;
                 }
-
-                //send_data_message
-                                    
                 break;
-            }
+            } 
             
             /* Get the next hop from the routing table. */
             //if (dest_entry_present > 0) {
@@ -363,18 +354,18 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             //    //        next_hop);
             //}
             
-            if (!src_entry_present) {
-                //TODO: insert this packet in pending queue.
-                //if (send_req_broadcast (odr_sockfd, odr_addr->sll_ifindex,
-                //            recvd_odr_frame->broadcast_id,
-                //            recvd_odr_frame->hop_count,
-                //            0, recvd_odr_frame->src_ip,
-                //            recvd_odr_frame->dest_ip) < 0) {
-                //    printf ("Broadcast error!\n");
-                //    return -1;
-                //}
-                insert_pending_queue (recvd_odr_frame);
-            }
+            //if (!src_entry_present) {
+            //    //TODO: insert this packet in pending queue.
+            //    //if (send_req_broadcast (odr_sockfd, odr_addr->sll_ifindex,
+            //    //            recvd_odr_frame->broadcast_id,
+            //    //            recvd_odr_frame->hop_count,
+            //    //            0, recvd_odr_frame->src_ip,
+            //    //            recvd_odr_frame->dest_ip) < 0) {
+            //    //    printf ("Broadcast error!\n");
+            //    //    return -1;
+            //    //}
+            //    insert_pending_queue (recvd_odr_frame);
+            //}
             
             /* Send RREP. */ 
             //send_rrep_packet (odr_sockfd, recvd_odr_frame);
