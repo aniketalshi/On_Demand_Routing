@@ -103,14 +103,13 @@ map_port_sp_t *fetch_entry_port (int);        /* fetch port to sunpath mapping e
 
 int send_raw_frame (int, char *, char *, int, odr_frame_t*);  /* Send raw ethernet frame */
 
+int get_r_entry (char *, r_entry_t **, int);     /* get the entry in routing table */
+int insert_r_entry (odr_frame_t *, r_entry_t **, 
+                              int, struct sockaddr_ll*);       /* insert entry in routing table */
 /* broadcast the rreq packets */
 int send_req_broadcast (int, int, int, int, int, int, int, char *, char *, char *);     
 
-int get_r_entry (char *, r_entry_t **, int );    /* get the entry in routing table */
-r_entry_t * insert_r_entry (char *, char *, 
-                           int, int, int);       /* insert entry in routing table */
-
-odr_frame_t *lookup_pending_queue (int );        /* lookup the frame in pending_queue */
+odr_frame_t *lookup_pending_queue (int);        /* lookup the frame in pending_queue */
 int insert_pending_queue (odr_frame_t *);        /* insert frame in pending queue */
 
 int process_recvd_frame (odr_frame_t **,void *); /* process recvd frame */
@@ -130,4 +129,6 @@ int send_to_peer_process (int, char *, char *, int, char *);
 /* process the received payload message */
 int process_data_message (int , int , odr_frame_t* );
 
+/* routine to print routing table */
+void print_routing_table();
 #endif /*__ODR_H*/

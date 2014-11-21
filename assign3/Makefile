@@ -4,7 +4,7 @@ CC = gcc
 #LIBS =  /home/courses/cse533/Stevens/unpv13e/libunp.a
 LIBS =  ./Stevens/unpv13e/libunp.a
 
-FLAGS = -g -O2
+FLAGS = -g 
 
 #CFLAGS = -I/home/courses/cse533/Stevens/unpv13e/lib
 CFLAGS = -I./Stevens/unpv13e/lib

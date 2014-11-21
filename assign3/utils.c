@@ -223,13 +223,15 @@ char *
 convert_to_mac (char *src_macaddr) {
     assert(src_macaddr);
     
-    char *mac = (char *)malloc(HW_ADDR);
+    char *mac = (char *)malloc(HW_ADDR + 1);
     int i;
     
     for(i = 0; i < HW_ADDR; ++i) {
         mac[i] = *src_macaddr++ & 0xff;
-        DEBUG(printf("%.2x%s", mac[i], (i == HW_ADDR-1)?" ":":"));
+        //DEBUG(printf("%.2x%s", mac[i], (i == HW_ADDR-1)?" ":":"));
     }
+    mac[HW_ADDR] = '\0';
+    DEBUG(printf("\n%s", mac));
     return mac;
 }
 

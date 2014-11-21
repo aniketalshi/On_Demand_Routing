@@ -204,7 +204,7 @@ send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, int src_port,
             printf ("\nRREQ Sent. Interface: %s, Broadcast id %d\n", if_name, broad_id);
             
             /* construct the odr frame */
-            odrframe = construct_odr (__DATA, broad_id, hopcount, 0, rdisc_flag, 
+            odrframe = construct_odr (__RREQ, broad_id, hopcount, 0, rdisc_flag, 
                                                     src_port, dstport, dstip, srcip, payload);
             if (odrframe == NULL) {
                 fprintf(stderr, "\nError creating odr frame");
@@ -297,45 +297,75 @@ send_raw_frame (int sockfd, char *src_macaddr,
     return send_result;
 }
 
+/* Update the routing table entry */
+int
+update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry, 
+                    int intf_n, char *next_hop) {
 
-/* fill the routing table entry*/
-r_entry_t *
-insert_r_entry (char *dest_ip, char *n_hop, 
-                           int intf_n, int hops, int b_id) { 
-    assert(dest_ip);
-    assert(n_hop);
+    //TODO: handle RREP packets: src and dest reversed.
+    DEBUG(printf("\n printing next hop : %s\n", next_hop));
+
+    strcpy(r_entry->destip, recv_buf->src_ip);
+    strcpy(r_entry->next_hop, next_hop);
+    gettimeofday(&(r_entry->timestamp), 0);
+    r_entry->if_no         = intf_n;
+    r_entry->no_hops       = recv_buf->hop_count;
+    r_entry->broadcast_id  = recv_buf->broadcast_id;
+    r_entry->next          = NULL;
+
+    return 1;
+}
+
+/* file the routing table entry */
+int
+insert_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t **r_entry,
+                    int intf_n, struct sockaddr_ll *odr_addr ) {
+    assert(recvd_odr_frame);
     
-    r_entry_t *temp_r_entry;
+    /* create new entry */
+    *r_entry = (r_entry_t *)calloc(1, sizeof(r_entry_t));
+    
+    DEBUG(printf("Next hop: %u\n", odr_addr->sll_addr));
 
-    /* check if the entry already exists in the routing table */
-    if (get_r_entry (dest_ip, &temp_r_entry, 0) >= 0) {
-        
-        /* check if entry is not null */
-        assert(temp_r_entry);
-        
-        /* update the timestamp of this entry */
-        gettimeofday(&(temp_r_entry->timestamp), 0);
-        
-        return temp_r_entry;
-    }
-   
-    /* entry doesnot exist, so insert new node */
-    r_entry_t *r_ent = (r_entry_t *)calloc(1, sizeof(r_entry_t));
+    /* insert all the fields in the routing table. */
+    update_r_entry (recvd_odr_frame, *r_entry, intf_n, odr_addr->sll_addr);
 
-    strcpy(r_ent->destip, dest_ip);
-    strcpy(r_ent->next_hop, n_hop);
-    gettimeofday(&(r_ent->timestamp), 0);
-    r_ent->if_no         = intf_n;
-    r_ent->no_hops       = hops;
-    r_ent->broadcast_id  = b_id;
-    r_ent->next          = NULL;
-   
+    
     /* insert it as top of routing table
      * if table is empty this will be first entry in table*/
-    r_ent->next = routing_table_head;
-    routing_table_head = r_ent;
+    (*r_entry)->next = routing_table_head;
+    routing_table_head = *r_entry;
+
+    return 1;
+}
+
+/* Check if the routing table entry needs to be updated, if so update it.*/
+int
+check_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t *r_entry, int intf_n,
+                    char *next_hop) {
     
-    return r_ent;
+    assert (recvd_odr_frame);
+    assert (r_entry);
+    assert (next_hop);
+    
+    /* Check if we have a lower hop count */
+    if (recvd_odr_frame->hop_count <= r_entry->no_hops) {
+        
+        /* Update the routing table entry */
+        update_r_entry (recvd_odr_frame, r_entry, intf_n, next_hop); 
+        return 1;
+    }
+
+    /* If hop count is greater, but broadcast ID is newer. */
+    if (recvd_odr_frame->broadcast_id > r_entry->broadcast_id) {
+        
+        /* Update the routing table entry */
+        update_r_entry (recvd_odr_frame, r_entry, intf_n, next_hop); 
+        return 1;
+    }
+    
+    /* Entry not updated. */
+    return 0;
 }
 
 /* search ip address in routing table */
@@ -360,7 +390,8 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
         /* if entry with given destination exists */
         if (strcmp (curr->destip, dest_ip) == 0) {
             
-            /* check if entry is stale */
+            /* check if entry is stale, and if the route discovery
+             * flag is set or not.*/
             if (((currtime.tv_sec - curr->timestamp.tv_sec) < stale_param) &&
                         (!route_disc_flag)) {
                 *r_entry = curr;
@@ -519,3 +550,48 @@ construct_odr (int type, int bid, int hopcount, int len, int rdisc_flag, int src
    return odr_frame; 
 }
 
+/* Print the routing table */
+void 
+print_routing_table() {
+    if (!routing_table_head) {
+        printf("\nRouting table Empty\n");
+        return;
+    }
+    
+    r_entry_t *curr;
+    time_t nowtime;
+    struct tm *nowtm;
+    char tmbuf[64], buf[64];
+
+    printf("\n=============== ODR Routing Table ===================\n");
+    printf("-----------------------------------------------"
+            "-----------------------------------------------\n");
+    
+
+    printf("| %15s | %20s | %5s | %5s | %5s | %30s |\n", "destination ip", "next hop",
+                                                            "ifno", "hops", 
+                                                            "b_id",
+                                                            "timestamp");
+
+    printf("-----------------------------------------------"
+            "-----------------------------------------------\n");
+    
+    /* iterate over all entries in routing table */
+    for (curr = routing_table_head; curr != NULL; curr = curr->next) {
+        
+        /* convert time to representation format */
+        nowtime = curr->timestamp.tv_sec;
+        nowtm   = localtime(&nowtime);
+        
+        strftime(tmbuf, sizeof(tmbuf), "%Y-%m-%d %H:%M:%S", nowtm);
+        snprintf(buf, sizeof(buf), "%s.%06d", tmbuf, curr->timestamp.tv_usec);
+
+        printf("| %15s | %20s | %5d | %5d | %5d | %30s |\n", curr->destip, curr->next_hop,
+                                                            curr->if_no, curr->no_hops,
+                                                             curr->broadcast_id, 
+                                                              buf);
+    }
+    printf("-----------------------------------------------"
+            "-----------------------------------------------\n");
+    return;
+}
