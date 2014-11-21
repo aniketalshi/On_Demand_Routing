@@ -198,8 +198,9 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
     char *self_ip, sun_path[MAXLINE], next_hop[HWADDR+1];
     char *src_vmname, *dst_vmname;
     r_entry_t *dest_r_entry, *src_r_entry, *r_entry;
+    odr_frame_t *frame;
     
-    int  dest_entry_present = 0, src_entry_present = 0, 
+    int  dest_entry_present = 0, src_entry_present = 0, broadcast_id,
          intf_n = 0, asent_flag = 0;
     
     /* get IP Address of the current node. */
@@ -255,7 +256,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             /* Check if the current node is the destination node. */
             if (strcmp (recvd_odr_frame->dest_ip, self_ip) == 0){
                 /* Send RREP. */ 
-                if (send_rrep_packet (odr_sockfd, recvd_odr_frame, src_r_entry, 0) < 0) {
+                if (send_rrep_packet (odr_sockfd, recvd_odr_frame, src_r_entry, 0, 1) < 0) {
                     fprintf(stderr, "Error sending RREP packet");
                     return -1;
                 }
@@ -271,7 +272,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                 
                 /* send the rrep */
                 if (send_rrep_packet (odr_sockfd, recvd_odr_frame, 
-                                     src_r_entry, dest_r_entry->no_hops) < 0) {
+                                     src_r_entry, dest_r_entry->no_hops, 0) < 0) {
                     fprintf(stderr, "Error sending RREP packet");
                     return -1;
                 }
@@ -315,11 +316,29 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             if (strcmp (recvd_odr_frame->dest_ip, self_ip) == 0) {
                 
                /* Look for msg in msg pending queue for this destination node and port */
+               if ((frame = lookup_pending_queue (recvd_odr_frame->broadcast_id)) != NULL) {
+                    
+                    DEBUG(printf("\nFound message in pending queue\n"));
+                    /* this parked frame is an RREP frame */
+                    if (frame->frame_type == __RREP) {
+
+                        /* Forward the rrep packet */
+                        if (send_rrep_packet (odr_sockfd, frame, 
+                                              src_r_entry, frame->hop_count, 0) < 0) {
+                            fprintf(stderr, "Error sending RREP packet");
+                            return -1;
+                        }
+
+                    } else if (frame->frame_type == __DATA) {
+
+
+                    }
+
+               }
                break;
             }
 
             /*************I am an intermediate node. Foward this RREP *******************/
-            
             
             /* Check if an entry already exists in the routing table for given destination */
             if (dest_entry_present > 0) {
@@ -330,45 +349,36 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                 
                 /* send the rrep */
                 if (send_rrep_packet (odr_sockfd, recvd_odr_frame, 
-                                     dest_r_entry, src_r_entry->no_hops) < 0) {
+                                     dest_r_entry, src_r_entry->no_hops, 0) < 0) {
                     fprintf(stderr, "Error sending RREP packet");
                     return -1;
                 }
                 break;
-            } 
             
-            /* Get the next hop from the routing table. */
-            //if (dest_entry_present > 0) {
-            //    check_r_entry (recvd_odr_frame, r_entry, intf_n, 
-            //            next_hop);
-            //    
-            //    /* Send RREP. */ 
-            //    send_rrep_packet (odr_sockfd, recvd_odr_frame);
-            //    break;
-            //}
+            }  else {
+                /* If an entry for this destination is not presnt, flood out RREQ */
+                assert(recvd_odr_frame);
+                printf ("\nNo Entry in table for node : %s. Flooding RREQ.\n", dst_vmname);
+               
+                broadcast_id = get_broadcast_id();
 
-            //else {
-
-            //    /* Insert the new information about src IP in r_table. */
-            //    //insert_r_entry (recvd_odr_frame, &r_entry, intf_n, 
-            //    //        next_hop);
-            //}
-            
-            //if (!src_entry_present) {
-            //    //TODO: insert this packet in pending queue.
-            //    //if (send_req_broadcast (odr_sockfd, odr_addr->sll_ifindex,
-            //    //            recvd_odr_frame->broadcast_id,
-            //    //            recvd_odr_frame->hop_count,
-            //    //            0, recvd_odr_frame->src_ip,
-            //    //            recvd_odr_frame->dest_ip) < 0) {
-            //    //    printf ("Broadcast error!\n");
-            //    //    return -1;
-            //    //}
-            //    insert_pending_queue (recvd_odr_frame);
-            //}
-            
-            /* Send RREP. */ 
-            //send_rrep_packet (odr_sockfd, recvd_odr_frame);
+                /* Insert the RREP packet in msg queue */
+                if (insert_pending_queue (recvd_odr_frame, broadcast_id) < 0) {
+                    fprintf(stderr, "Error inserting packet in pending queue");
+                    return -1;
+                }
+                
+                /* flood rreq on all interfaces except one on which req arrived */
+                if (send_req_broadcast (odr_sockfd, intf_n, broadcast_id, 
+                                        -1, recvd_odr_frame->dst_port,
+                                        0, 0, recvd_odr_frame->dest_ip, self_ip, 
+                                        recvd_odr_frame->payload) < 0) {
+                    
+                    fprintf(stderr, "Error Flooding RREP");
+                    return -1;
+                }
+                break;
+            }
 
             break;
         }
@@ -419,7 +429,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                 //    printf ("Broadcast error!\n");
                 //    return -1;
                 //}
-                insert_pending_queue (recvd_odr_frame);
+                //insert_pending_queue (recvd_odr_frame);
             }
             
             break;
@@ -472,7 +482,7 @@ int main (int argc, const char *argv[]) {
     }
     /* staleness parameter */ 
     stale_param = atoi((char *)argv[1]);
-    if(stale_param == 0) {
+    if(stale_param < 0) {
         fprintf(stderr, "\n Invalid Staleness value");
         return 0;
     }

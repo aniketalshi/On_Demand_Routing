@@ -148,18 +148,20 @@ send_data_message (int sockfd, int src_port,
 
 /* send the reply packet */
 int
-send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_count) { 
+send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_count, int swap) { 
 
     assert(frame);
     assert(entry);
     char *src_mac, *self_ip, *vmname;
     
-    if ((frame = construct_odr (__RREP, 0, hop_count, frame->payload_len, 0, frame->dst_port, 
-                         frame->src_port, frame->src_ip, frame->dest_ip, frame->payload)) == NULL) {
-        fprintf(stderr, "Error creating rrep");
-        return -1;
+
+    if (swap) {
+        if ((frame = construct_odr (__RREP, frame->broadcast_id, hop_count, frame->payload_len, 0, frame->dst_port, 
+                             frame->src_port, frame->src_ip, frame->dest_ip, frame->payload)) == NULL) {
+            fprintf(stderr, "Error creating rrep");
+            return -1;
+        }
     }
-    
     /* get own mac from interface num */
     src_mac = get_hwaddr_from_int (entry->if_no);
 
@@ -426,22 +428,26 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
 }
 
 /* lookup the frame in pending message queue based on broadcast id */
+//TODO: Modify lookup pending queue logic
 odr_frame_t *
 lookup_pending_queue (int broadcast_id) {
     if (!pending_queue_head)
        return NULL;
+
     
+    DEBUG(printf("\nLooking in pending queue %d\n", broadcast_id));
     pending_msgs_t *curr = pending_queue_head;
     
     for(; curr != NULL; curr = curr->next) {
         assert(curr->odrframe);
         
         /* if we have found our node */
-        if (curr->odrframe->broadcast_id == broadcast_id) {
+        if (curr->broadcast_id == broadcast_id) {
             
             /* if this is the head of queue */
             if (curr == pending_queue_head) {
                 pending_queue_head = pending_queue_head->next;
+                curr->next = NULL;
                 return curr->odrframe;
             }
             
@@ -462,7 +468,7 @@ lookup_pending_queue (int broadcast_id) {
 
 /* insert message in pending queue */
 int
-insert_pending_queue (odr_frame_t *odrframe) {
+insert_pending_queue (odr_frame_t *odrframe, int broad_id) {
     assert(odrframe);
     
     /* if entry is already present in queue */
@@ -472,7 +478,8 @@ insert_pending_queue (odr_frame_t *odrframe) {
     pending_msgs_t *entry = calloc(1, sizeof(pending_msgs_t));
     
     /* insert at the front of the queue */
-    entry->odrframe = odrframe;
+    entry->odrframe     = odrframe;
+    entry->broadcast_id = broad_id;
     
     /* if head is not present */
     if (!pending_queue_head) {

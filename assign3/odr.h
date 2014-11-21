@@ -85,6 +85,7 @@ typedef struct odr_frame_struct {
 
 /* list of all pending messages */
 typedef struct pending_msgs {
+    int broadcast_id;
     odr_frame_t *odrframe;
     struct pending_msgs *next, *prev;
 }pending_msgs_t;
@@ -118,7 +119,7 @@ int check_r_entry (odr_frame_t *, r_entry_t *, int , unsigned char *);
 int send_req_broadcast (int, int, int, int, int, int, int, char *, char *, char *);     
 
 odr_frame_t *lookup_pending_queue (int);        /* lookup the frame in pending_queue */
-int insert_pending_queue (odr_frame_t *);        /* insert frame in pending queue */
+int insert_pending_queue (odr_frame_t *, int);        /* insert frame in pending queue */
 
 int process_recvd_frame (odr_frame_t **,void *); /* process recvd frame */
 
@@ -126,7 +127,7 @@ int process_recvd_frame (odr_frame_t **,void *); /* process recvd frame */
 odr_frame_t * construct_odr (int , int , int , int , int , int ,  
                               int , char *, char *, char *);
 
-int send_rrep_packet (int, odr_frame_t *, r_entry_t *, int);    /* send the reply packet */
+int send_rrep_packet (int, odr_frame_t *, r_entry_t *, int, int);    /* send the reply packet */
 
 /* send the application payload message */
 int send_data_message (int , int , send_params_t *, r_entry_t *); 
