@@ -118,9 +118,9 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
         return -1;
     
 
-    printf("\nData received from peer process. SUN_PATH:  \"./%s\"", proc_addr->sun_path);
-    DEBUG(printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, 
-                    sparams->destport, sparams->msg, sparams->destip));
+    //printf("\nData received from peer process. SUN_PATH:  \"./%s\"", proc_addr->sun_path);
+    //DEBUG(printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, 
+     //               sparams->destport, sparams->msg, sparams->destip));
     
     /* check if entry exist and if not insert new entry in port to sunpath table */
     if((map_entry = fetch_entry_path (proc_addr->sun_path)) == NULL) {
@@ -196,6 +196,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
 
     odr_frame_t *recvd_odr_frame;
     char *self_ip, sun_path[MAXLINE], next_hop[HWADDR+1];
+    char *src_vmname, *dst_vmname;
     r_entry_t *dest_r_entry, *src_r_entry, *r_entry;
     
     int  dest_entry_present = 0, src_entry_present = 0, 
@@ -225,14 +226,21 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
     
     /* Check if the srcip is already present in routing table. */
     src_entry_present = get_r_entry (recvd_odr_frame->src_ip, &src_r_entry, 0); 
-    
-    DEBUG(printf("\nMessage recvd from Destip %s port %d\n", recvd_odr_frame->dest_ip, 
-                                            recvd_odr_frame->dst_port));
+   
+
+    /* Get name of vm we recvd packet from */
+    src_vmname = get_name_ip(recvd_odr_frame->src_ip); 
+    dst_vmname = get_name_ip(recvd_odr_frame->dest_ip); 
+    assert(src_vmname);
+    assert(dst_vmname);
+
+    //DEBUG(printf("\nMessage recvd from %s port %d\n", vmname, recvd_odr_frame->dst_port));
     
     switch (recvd_odr_frame->frame_type) {
         case __RREQ: {
             
-            DEBUG(printf("\nReceived RREQ", recvd_odr_frame->frame_type));
+            DEBUG(printf("\n Received RREQ from %s, intended for %s, broadcast id %d\n", 
+                                src_vmname, dst_vmname, recvd_odr_frame->broadcast_id));
             
             if (src_entry_present > 0) {
                 /* If entry for src ip is present, check if we can update the entry */ 
@@ -453,6 +461,9 @@ int main (int argc, const char *argv[]) {
     void *recv_buf = malloc(ETH_FRAME_LEN); 
     socklen_t odrsize = sizeof(struct sockaddr_ll);
    
+    /* construct name to canonical ip table */ 
+    construct_name_to_ip_table();
+    
     /* insert serv port to server sunpath mapping in table */
     if (insert_map_port_sp (__SERV_PORT, __UNIX_SERV_PATH) < 0) {
         fprintf(stderr, "Error inserting in port to sunpath map");

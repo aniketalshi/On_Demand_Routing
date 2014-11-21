@@ -288,6 +288,45 @@ get_self_ip () {
      return NULL;
 }
 
+/* construct name to ip table */
+int 
+construct_name_to_ip_table() {
+    char buf[10], ip[INET_ADDRSTRLEN];
+    name_to_ip_t *pre = NULL;
+    int i;
+
+    for (i = 1; i <= 10; ++i) {
+        sprintf(buf, "%s%d", "vm", i);
+        
+        if (get_canonical_ip(buf, ip) >= 0) {
+            name_to_ip_t *entry = calloc(1, sizeof(name_to_ip_t ));
+            strncpy(entry->name, buf, 10);
+            strncpy(entry->ip, ip, INET_ADDRSTRLEN); 
+
+            if(!name_ip_head) {
+                name_ip_head = entry;
+                pre = entry;
+                continue;
+            }
+            
+            pre->next = entry;
+            pre = entry;
+        }
+    }
 
 
+    return 0;
+}
+
+/* get name from ip */
+char *get_name_ip (char *ip) {
+    assert(ip);
+    name_to_ip_t *curr = NULL;
+    
+    for (curr = name_ip_head; curr != NULL; curr = curr->next) {
+        if (strcmp(curr->ip, ip) == 0)
+            return curr->name;
+    }
+    return NULL;
+}
 

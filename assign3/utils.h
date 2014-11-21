@@ -50,7 +50,7 @@ struct hwa_info *hwa_struct_head;
 extern char * self_ip_addr;
 /*********************************************************************/
 
-struct name_to_canon_ip {
+typedef struct name_to_canon_ip {
     char name[10];
     char ip[INET_ADDRSTRLEN];
     struct name_to_canon_ip *next;
@@ -59,7 +59,7 @@ struct name_to_canon_ip {
 name_to_ip_t *name_ip_head;
 
 int construct_name_to_ip_table();
-char *name get_name_ip (char *);
+char *get_name_ip (char *);
 
 /*********************************************************************/
 typedef struct msg_recv_params {

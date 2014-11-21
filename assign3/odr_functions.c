@@ -290,8 +290,6 @@ send_raw_frame (int sockfd, char *src_macaddr,
         perror("\nError in Sending frame\n");     
     }
     
-    DEBUG(printf("\nEth frame sent\n"));
-    
     return send_result;
 }
 
@@ -347,7 +345,8 @@ check_r_entry (odr_frame_t *recvd_odr_frame,
     assert (next_hop);
     
     /* Check if we have a lower hop count */
-    if (recvd_odr_frame->hop_count <= r_entry->no_hops) {
+    if ((recvd_odr_frame->hop_count <= r_entry->no_hops) &&
+       (recvd_odr_frame->broadcast_id >= r_entry->broadcast_id)) {
         
         /* Update the routing table entry */
         update_r_entry (recvd_odr_frame, r_entry, intf_n, next_hop); 
@@ -392,10 +391,15 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
              * flag is set or not.*/
             if (((currtime.tv_sec - curr->timestamp.tv_sec) < stale_param) &&
                         (!route_disc_flag)) {
+
                 *r_entry = curr;
                 return 1;
             
             } else {
+                /* if this is routing table empty */
+                if (routing_table_head == curr)
+                    routing_table_head = curr->next;
+
                 /* delete this entry */
                 if(curr->prev) {
                     curr->prev->next = curr->next;
@@ -403,6 +407,7 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
                 if(curr->next) {
                     curr->next->prev = curr->prev;
                 }
+                
                 free(curr);
                 break;
             }
@@ -410,7 +415,7 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
     }
     
     /* if routing table is empty or entry not found */
-    return 0;
+    return -1;
 }
 
 /* lookup the frame in pending message queue based on broadcast id */
