@@ -196,7 +196,8 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
 
     odr_frame_t *recvd_odr_frame;
     char *self_ip, sun_path[MAXLINE], next_hop[HWADDR+1];
-    r_entry_t *r_entry;
+    r_entry_t *dest_r_entry, *src_r_entry, *r_entry;
+    
     int  dest_entry_present = 0, src_entry_present = 0, 
          intf_n = 0, asent_flag = 0;
     
@@ -208,10 +209,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
     /* get the interface number of the packet. */
     intf_n = odr_addr->sll_ifindex;
     
-    /* get the HW address of next hop hop of the packet. */
-    //memcpy(next_hop, odr_addr->sll_addr, HWADDR);
-    //next_hop[HWADDR] = '\0';
-    
+    /*populate the recvd odr frame, convert network to host order*/ 
     if (process_recvd_frame (&recvd_odr_frame, recv_buf) < 0) {
         perror("\nError in processing recvd frame");
         return 0;
@@ -223,54 +221,68 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
     }
     
     /* Check if the destip is already present in routing table. */
-    //dest_entry_present = get_r_entry (recvd_odr_frame->dest_ip, &r_entry, 0); 
-    //
-    ///* Check if the srcip is already present in routing table. */
-    //src_entry_present = get_r_entry (recvd_odr_frame->src_ip, &r_entry, 0); 
+    dest_entry_present = get_r_entry (recvd_odr_frame->dest_ip, &dest_r_entry, 0); 
     
-    DEBUG(printf("\nReceived the packet %d", recvd_odr_frame->frame_type));
-    DEBUG(printf("\nDestip %s port %d\n", recvd_odr_frame->dest_ip, 
+    /* Check if the srcip is already present in routing table. */
+    src_entry_present = get_r_entry (recvd_odr_frame->src_ip, &src_r_entry, 0); 
+    
+    DEBUG(printf("\nMessage recvd from Destip %s port %d\n", recvd_odr_frame->dest_ip, 
                                             recvd_odr_frame->dst_port));
     
     switch (recvd_odr_frame->frame_type) {
         case __RREQ: {
-            printf("\n Request packet %s\n", next_hop);
-            insert_r_entry (recvd_odr_frame, &r_entry, intf_n, odr_addr);
-           
-            print_routing_table();
             
-            /* Check if we can use information about source IP. */
-            //if (src_entry_present > 0) {
+            DEBUG(printf("\nReceived RREQ", recvd_odr_frame->frame_type));
+            
+            if (src_entry_present > 0) {
+                /* If entry for src ip is present, check if we can update the entry */ 
+                asent_flag = check_r_entry (recvd_odr_frame, src_r_entry, intf_n, odr_addr->sll_addr); 
+            } else {
+                /* Insert the new information about src IP in r_table. */
+                insert_r_entry (recvd_odr_frame, &src_r_entry, intf_n, odr_addr->sll_addr);
+                
+                /* entry is newly inserted, set asent_flag */
+                asent_flag = 1;
+            }
 
-            //    check_r_entry (recvd_odr_frame, *r_entry, intf_n,
-            //                            next_hop);
-            //}
-            //else {
+            /* Check if the current node is the destination node. */
+            if (strcmp (recvd_odr_frame->dest_ip, self_ip) == 0){
+                /* Send RREP. */ 
+                if (send_rrep_packet (odr_sockfd, recvd_odr_frame, src_r_entry, 0) < 0) {
+                    fprintf(stderr, "Error sending RREP packet");
+                    return -1;
+                }
+                break;
+            }
+            
+            /****** You are an intermediate node receiving RREQ *********/
 
-            //    /* Insert the new information about src IP in r_table. */
-            //    insert_r_entry (recvd_odr_frame, r_entry, intf_n, 
-            //            next_hop);
-            //}
-
-            ///* Check if the current node is the destination node. */
-            //if (strcmp (recvd_odr_frame->dest_ip, self_ip) == 0){
-            //   
-            //    /* Send RREP. */ 
-            //    send_rrep_packet (odr_sockfd, recvd_odr_frame);
-
-            //    break;
-            //}
-
-            ///* Check if an entry already exists in the routing table. */
-            //if (dest_entry_present > 0) {
-            //    asent_flag = check_r_entry (recvd_odr_frame, *r_entry, intf_n,
-            //                            next_hop);
-            //    
-            //    /* Send RREP. */ 
-            //    send_rrep_packet (odr_sockfd, recvd_odr_frame);
-            //    
-            //    break;
-            //}
+            /* Check if an entry already exists in the routing table for given destination */
+            if (dest_entry_present > 0) {
+                /* send the rrep */
+                if (send_rrep_packet (odr_sockfd, recvd_odr_frame, 
+                                     src_r_entry, dest_r_entry->no_hops) < 0) {
+                    fprintf(stderr, "Error sending RREP packet");
+                    return -1;
+                }
+                /* if asent flag is set, broadcast information with asent flag set */
+                
+                break;
+            } else {
+                assert(recvd_odr_frame);
+                
+                /* if dest entry is not present, flood rreq */
+                if (send_req_broadcast (odr_sockfd, intf_n, recvd_odr_frame->broadcast_id, 
+                                        recvd_odr_frame->src_port, recvd_odr_frame->dst_port,
+                                        recvd_odr_frame->hop_count + 1, recvd_odr_frame->route_disc_flag, 
+                                        recvd_odr_frame->dest_ip, recvd_odr_frame->src_ip, 
+                                        recvd_odr_frame->payload) < 0) {
+                    
+                    fprintf(stderr, "Error Flooding RREP");
+                    return -1;
+                }
+                break;
+            }
 
             ////TODO: Handle Already_sent flag.
             //
@@ -293,8 +305,8 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             /* Check if we can use information about destination IP. */
             if (dest_entry_present > 0) {
 
-                check_r_entry (recvd_odr_frame, *r_entry, intf_n,
-                                        next_hop);
+               // check_r_entry (recvd_odr_frame, *r_entry, intf_n,
+                //                        next_hop);
             }
             else {
 
@@ -327,21 +339,21 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             }
             
             /* Get the next hop from the routing table. */
-            if (dest_entry_present > 0) {
-                check_r_entry (recvd_odr_frame, r_entry, intf_n, 
-                        next_hop);
-                
-                /* Send RREP. */ 
-                send_rrep_packet (odr_sockfd, recvd_odr_frame);
-                break;
-            }
+            //if (dest_entry_present > 0) {
+            //    check_r_entry (recvd_odr_frame, r_entry, intf_n, 
+            //            next_hop);
+            //    
+            //    /* Send RREP. */ 
+            //    send_rrep_packet (odr_sockfd, recvd_odr_frame);
+            //    break;
+            //}
 
-            else {
+            //else {
 
-                /* Insert the new information about src IP in r_table. */
-                //insert_r_entry (recvd_odr_frame, &r_entry, intf_n, 
-                //        next_hop);
-            }
+            //    /* Insert the new information about src IP in r_table. */
+            //    //insert_r_entry (recvd_odr_frame, &r_entry, intf_n, 
+            //    //        next_hop);
+            //}
             
             if (!src_entry_present) {
                 //TODO: insert this packet in pending queue.
@@ -357,7 +369,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             }
             
             /* Send RREP. */ 
-            send_rrep_packet (odr_sockfd, recvd_odr_frame);
+            //send_rrep_packet (odr_sockfd, recvd_odr_frame);
 
             break;
         }
@@ -425,6 +437,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
         }
     }
     
+    print_routing_table();
     return 0;
 }
 
@@ -535,20 +548,8 @@ int main (int argc, const char *argv[]) {
             if(handle_ethernet_msg (odr_sockfd, proc_sockfd, &odr_addr, recv_buf) < 0)
                 return 0;
 
-            /* ODR process to send message to */
-            /*
-            odr_proc_addr.sun_family = AF_LOCAL;
-            strcpy(odr_proc_addr.sun_path, UNIX_PROC_PATH);
-
-            if (sendto (resp_sockfd, msg, strlen(msg), 0, 
-                        (struct sockaddr *) &resp_addr, sizeof(struct sockaddr_un)) <= 0) {
-                perror("\n Error in sendto");
-                return -1;
-            }
-            */
         }
     }
-
 
     return 0;
 }

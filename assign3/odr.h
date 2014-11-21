@@ -55,7 +55,7 @@ typedef struct send_params {
 /* routing table entry struct */
 typedef struct r_entry {
     char  destip[INET_ADDRSTRLEN];    // destination canonical ip
-    char  next_hop[HWADDR];           // Next hop ethernet addr
+    char  next_hop[HWADDR+1];         // Next hop ethernet addr
     int   if_no;                      // interface no to send packet
     int   no_hops;                    // Num of hops to dest
     int   broadcast_id;               // Broadcast id
@@ -103,9 +103,17 @@ map_port_sp_t *fetch_entry_port (int);        /* fetch port to sunpath mapping e
 
 int send_raw_frame (int, char *, char *, int, odr_frame_t*);  /* Send raw ethernet frame */
 
+
+
+
 int get_r_entry (char *, r_entry_t **, int);     /* get the entry in routing table */
 int insert_r_entry (odr_frame_t *, r_entry_t **, 
-                              int, struct sockaddr_ll*);       /* insert entry in routing table */
+                              int, unsigned char*);       /* insert entry in routing table */
+
+int check_r_entry (odr_frame_t *, r_entry_t *, int , unsigned char *);
+
+
+
 /* broadcast the rreq packets */
 int send_req_broadcast (int, int, int, int, int, int, int, char *, char *, char *);     
 
@@ -118,7 +126,7 @@ int process_recvd_frame (odr_frame_t **,void *); /* process recvd frame */
 odr_frame_t * construct_odr (int , int , int , int , int , int ,  
                               int , char *, char *, char *);
 
-int send_rrep_packet (int, odr_frame_t *);    /* send the reply packet */
+int send_rrep_packet (int, odr_frame_t *, r_entry_t *, int);    /* send the reply packet */
 
 /* send the application payload message */
 int send_data_message (int , int , send_params_t *, r_entry_t *); 

@@ -148,29 +148,27 @@ send_data_message (int sockfd, int src_port,
 
 /* send the reply packet */
 int
-send_rrep_packet (int sockfd, odr_frame_t *frame) {
+send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_count) { 
 
     assert(frame);
-    r_entry_t *entry;
-    char src_mac[HW_ADDR];
+    assert(entry);
+    char *src_mac; 
 
-    /* check if routing entry exists */
-    if (get_r_entry(frame->src_ip, &entry, 0) > 0) {
-        assert(entry);
-        
-        memset (src_mac, 0, HW_ADDR);
-        /* send the reply on int in routing table */  
-        memcpy(src_mac, get_hwaddr_from_int(entry->if_no), HW_ADDR);
-        
-        DEBUG(printf("\nHW ADDR for sending: %s",
-                    convert_to_mac(get_hwaddr_from_int(entry->if_no))));
-
-        printf ("\nRREP Sent. Interface index : %d\n", entry->if_no);
-        
-        /* send odr frame */
-        if(send_raw_frame (sockfd, src_mac, entry->next_hop, entry->if_no, frame) < 0)
-            return -1;
+    if ((frame = construct_odr (__RREP, 0, hop_count, frame->payload_len, 0, frame->dst_port, 
+                         frame->src_port, frame->src_ip, frame->dest_ip, frame->payload)) == NULL) {
+        fprintf(stderr, "Error creating rrep");
+        return -1;
     }
+    
+    /* get own mac from interface num */
+    src_mac = get_hwaddr_from_int (entry->if_no);
+    
+    /* send raw frame on wire */     
+    if(send_raw_frame (sockfd, src_mac, entry->next_hop, entry->if_no, frame) < 0)
+        return -1;
+
+    DEBUG(printf("\n RREP Sent. Src IP: %s. Outgoing interface %d\n",
+                                                  frame->src_ip, entry->if_no));
     return 0;
 }
 
@@ -300,16 +298,17 @@ send_raw_frame (int sockfd, char *src_macaddr,
 /* Update the routing table entry */
 int
 update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry, 
-                    int intf_n, char *next_hop) {
+                    int intf_n, unsigned char *next_hop) {
 
-    //TODO: handle RREP packets: src and dest reversed.
-    DEBUG(printf("\n printing next hop : %s\n", next_hop));
+    if (!recv_buf || !r_entry || !next_hop)
+        return -1;
 
     strcpy(r_entry->destip, recv_buf->src_ip);
-    strcpy(r_entry->next_hop, next_hop);
+    memcpy(r_entry->next_hop, next_hop, HWADDR);
+    
     gettimeofday(&(r_entry->timestamp), 0);
     r_entry->if_no         = intf_n;
-    r_entry->no_hops       = recv_buf->hop_count;
+    r_entry->no_hops       = recv_buf->hop_count + 1;
     r_entry->broadcast_id  = recv_buf->broadcast_id;
     r_entry->next          = NULL;
 
@@ -319,18 +318,17 @@ update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry,
 /* file the routing table entry */
 int
 insert_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t **r_entry,
-                    int intf_n, struct sockaddr_ll *odr_addr ) {
+                                int intf_n, unsigned char *next_hop) {
     assert(recvd_odr_frame);
+    assert(next_hop);
     
     /* create new entry */
     *r_entry = (r_entry_t *)calloc(1, sizeof(r_entry_t));
     
-    DEBUG(printf("Next hop: %u\n", odr_addr->sll_addr));
-
     /* insert all the fields in the routing table. */
-    update_r_entry (recvd_odr_frame, *r_entry, intf_n, odr_addr->sll_addr);
+    if (update_r_entry (recvd_odr_frame, *r_entry, intf_n, next_hop) < 0)
+        return -1;
 
-    
     /* insert it as top of routing table
      * if table is empty this will be first entry in table*/
     (*r_entry)->next = routing_table_head;
@@ -341,8 +339,8 @@ insert_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t **r_entry,
 
 /* Check if the routing table entry needs to be updated, if so update it.*/
 int
-check_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t *r_entry, int intf_n,
-                    char *next_hop) {
+check_r_entry (odr_frame_t *recvd_odr_frame, 
+                      r_entry_t *r_entry, int intf_n, unsigned char *next_hop) {
     
     assert (recvd_odr_frame);
     assert (r_entry);
@@ -491,8 +489,6 @@ convert_net_host_order(odr_frame_t* recvd_frame) {
     recvd_frame->src_port        = ntohl(recvd_frame->src_port);
     recvd_frame->dst_port        = ntohl(recvd_frame->dst_port);
 
-    DEBUG(printf("\n Type of frame : %d", recvd_frame->frame_type));
-    
     return 0;
 }
 
@@ -516,7 +512,6 @@ process_recvd_frame (odr_frame_t **recvd_odr_frame, void *recv_buf) {
     /* convert from network to host order */
     convert_net_host_order(*recvd_odr_frame); 
 
-    DEBUG(printf("Message Processed\n"));
     return 0;
 }
 
@@ -563,9 +558,10 @@ print_routing_table() {
     struct tm *nowtm;
     char tmbuf[64], buf[64];
 
-    printf("\n=============== ODR Routing Table ===================\n");
+    printf("\n================================ ODR Routing Table "
+            "===================================================\n");
     printf("-----------------------------------------------"
-            "-----------------------------------------------\n");
+            "----------------------------------------------------\n");
     
 
     printf("| %15s | %20s | %5s | %5s | %5s | %30s |\n", "destination ip", "next hop",
@@ -574,7 +570,7 @@ print_routing_table() {
                                                             "timestamp");
 
     printf("-----------------------------------------------"
-            "-----------------------------------------------\n");
+            "----------------------------------------------------\n");
     
     /* iterate over all entries in routing table */
     for (curr = routing_table_head; curr != NULL; curr = curr->next) {
@@ -586,12 +582,13 @@ print_routing_table() {
         strftime(tmbuf, sizeof(tmbuf), "%Y-%m-%d %H:%M:%S", nowtm);
         snprintf(buf, sizeof(buf), "%s.%06d", tmbuf, curr->timestamp.tv_usec);
 
-        printf("| %15s | %20s | %5d | %5d | %5d | %30s |\n", curr->destip, curr->next_hop,
-                                                            curr->if_no, curr->no_hops,
-                                                             curr->broadcast_id, 
-                                                              buf);
+        printf("| %15s |    ", curr->destip); 
+        print_mac(curr->next_hop);
+        
+        printf("| %5d | %5d | %5d | %30s |\n", curr->if_no, 
+                                curr->no_hops, curr->broadcast_id, buf);
     }
     printf("-----------------------------------------------"
-            "-----------------------------------------------\n");
+            "----------------------------------------------------\n");
     return;
 }

@@ -219,24 +219,28 @@ Get_hw_struct_head()
 
 
 /* convert char sequence into mac addr */
+void 
+print_mac (char *src_macaddr) {
+    assert(src_macaddr);
+    int i = 0; 
+    for(i = 0; i < HW_ADDR; ++i) {
+        printf("%.2x%s",*src_macaddr++ & 0xff, (i == HW_ADDR-1)?" ":":");
+    }
+}
+
 char *
 convert_to_mac (char *src_macaddr) {
     assert(src_macaddr);
-    
-    char *mac = (char *)malloc(HW_ADDR + 1);
-    int i;
+    int i = 0; 
+    char *mac = malloc(HW_ADDR + 1);
     
     for(i = 0; i < HW_ADDR; ++i) {
-        mac[i] = *src_macaddr++ & 0xff;
-        //DEBUG(printf("%.2x%s", mac[i], (i == HW_ADDR-1)?" ":":"));
+        mac[i] = *src_macaddr++ & 0xff;    
     }
-    mac[HW_ADDR] = '\0';
-    DEBUG(printf("\n%s", mac));
     return mac;
 }
 
-
-/* get hw address from ip */
+/* get hw address from interface num */
 char *
 get_hwaddr_from_int (int interface_no) {
     

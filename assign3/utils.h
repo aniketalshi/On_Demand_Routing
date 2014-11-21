@@ -50,7 +50,18 @@ struct hwa_info *hwa_struct_head;
 extern char * self_ip_addr;
 /*********************************************************************/
 
+struct name_to_canon_ip {
+    char name[10];
+    char ip[INET_ADDRSTRLEN];
+    struct name_to_canon_ip *next;
+}name_to_ip_t;
 
+name_to_ip_t *name_ip_head;
+
+int construct_name_to_ip_table();
+char *name get_name_ip (char *);
+
+/*********************************************************************/
 typedef struct msg_recv_params {
     char cli_ip[IP_LEN], msg[MAXLINE];
     int port;
@@ -65,7 +76,8 @@ void   free_hwa_info(struct hwa_info *);
 
 int get_canonical_ip (char *, char *);
 int msg_send (int, char*, int, char*, int );
-char *convert_to_mac(char *);
+void print_mac(char *);
+char * convert_to_mac (char *);
 int get_broadcast_id();
 char *get_hwaddr_from_int(int);
 char * get_self_ip ();
