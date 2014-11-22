@@ -15,7 +15,7 @@
 #define __UNIX_SERV_PATH "servpathfile"
 #define __SERV_PORT 5500
 
-#define USID_PROTO 0xA17D
+#define USID_PROTO 0xA11D
 #define VMNAME_LEN 10
 #define IP_LEN     50
 #define PAYLOAD_SIZE 1440
@@ -83,9 +83,12 @@ typedef struct odr_frame_struct {
 
 /*************** Queue of pending msgs ***********************/
 
+
+/* Note that everything stored in pending queue will be in
+ * host byte order to be able to do lookup */
 /* list of all pending messages */
 typedef struct pending_msgs {
-    int broadcast_id;
+    char destip [INET_ADDRSTRLEN];
     odr_frame_t *odrframe;
     struct pending_msgs *next, *prev;
 }pending_msgs_t;
@@ -120,7 +123,7 @@ int send_req_broadcast (int, int, int, int, int, int, int, char *, char *, char 
 
 odr_frame_t * lookup_pending_queue (char *);/* lookup the frame in pending_queue */
 
-int insert_pending_queue (odr_frame_t *, int);        /* insert frame in pending queue */
+int insert_pending_queue (odr_frame_t *, char *);        /* insert frame in pending queue */
 
 int process_recvd_frame (odr_frame_t **,void *); /* process recvd frame */
 

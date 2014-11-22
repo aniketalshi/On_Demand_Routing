@@ -117,6 +117,7 @@ msg_send (int sockfd, char* destip, int destport,
         return -1;
     }
     
+    DEBUG(printf("\nMessage sent to ODR process. Intended for dest ip %s\n", destip));
     return 0;
 }
 /***********************************************************************
@@ -328,5 +329,16 @@ char *get_name_ip (char *ip) {
             return curr->name;
     }
     return NULL;
+}
+
+/* print name to ip table */
+void print_name_ip() {
+    name_to_ip_t *curr = NULL;
+    
+    printf("\n");
+    for (curr = name_ip_head; curr != NULL; curr = curr->next) {
+        printf ("\n| ip %s | name %s |" , curr->ip, curr->name);
+    }
+    printf("\n");
 }
 

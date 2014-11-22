@@ -61,13 +61,13 @@ int main (int argc, const char* argv[]) {
             continue;
         }
         
-        DEBUG(printf("\n VM name : %s canonical IP: %s", serv_vm, canon_ip));
+        DEBUG(printf("\n Request sent to node %s with IP: %s", serv_vm, canon_ip));
         msg_send(cli_sockfd, canon_ip, __SERV_PORT, "hello world", 0);
         
         memset (&msg, 0, MAXLINE);
         /* sit on message recv */
         msg_recv (cli_sockfd, msg, cli_ip, &cli_port, &mparams);
-        printf ("\nTime received from server%s\n", mparams.msg);
+        printf ("\nServer at %s replied with time : %s\n", serv_vm, mparams.msg);
         break;
     }
 

@@ -117,7 +117,6 @@ send_data_message (int sockfd, int src_port,
     char *src_ip, *src_mac;
     odr_frame_t *odrframe;
     
-    
     if ((src_ip = get_self_ip()) == NULL) {
         return -1;
     }
@@ -182,6 +181,7 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
     /* get own ip addr */
     self_ip = get_self_ip();
     assert(self_ip);
+    
     /* get name corresponding to this ip */
     vmname = get_name_ip(self_ip);
     assert(vmname);
@@ -333,6 +333,7 @@ update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry,
     r_entry->no_hops       = recv_buf->hop_count + 1;
     r_entry->broadcast_id  = recv_buf->broadcast_id;
     r_entry->next          = NULL;
+    r_entry->prev          = NULL;
 
     return 1;
 }
@@ -350,9 +351,15 @@ insert_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t **r_entry,
     /* insert all the fields in the routing table. */
     if (update_r_entry (recvd_odr_frame, *r_entry, intf_n, next_hop) < 0)
         return -1;
-
-    /* insert it as top of routing table
-     * if table is empty this will be first entry in table*/
+    
+    /* if head is null */
+    if (!routing_table_head ) {
+        routing_table_head = *r_entry;
+        return 1;
+    }
+    
+    /* insert it as top of routing table */
+    routing_table_head->prev = (*r_entry);
     (*r_entry)->next = routing_table_head;
     routing_table_head = *r_entry;
 
@@ -420,9 +427,10 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
                 return 1;
             
             } else {
-                /* if this is routing table empty */
-                if (routing_table_head == curr)
+                /* if this is routing table head */
+                if (routing_table_head == curr) {
                     routing_table_head = curr->next;
+                }
 
                 /* delete this entry */
                 if(curr->prev) {
@@ -432,7 +440,7 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
                     curr->next->prev = curr->prev;
                 }
                 
-                free(curr);
+                //free(curr);
                 break;
             }
         }
@@ -442,8 +450,7 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
     return -1;
 }
 
-/* lookup the frame in pending message queue based on broadcast id */
-//TODO: Modify lookup pending queue logic
+/* lookup in pending queue based on dest ip */
 odr_frame_t *
 lookup_pending_queue (char *destip) {
     assert(destip);
@@ -457,9 +464,8 @@ lookup_pending_queue (char *destip) {
     
     for(; curr != NULL; curr = curr->next) {
         assert(curr->odrframe);
-        
         /* if we have found our node */
-        if (strcmp(curr->odrframe->dest_ip, destip) == 0) {
+        if (strcmp(curr->destip, destip) == 0) {
             
             /* if this is the head of queue */
             if (curr == pending_queue_head) {
@@ -485,8 +491,9 @@ lookup_pending_queue (char *destip) {
 
 /* insert message in pending queue */
 int
-insert_pending_queue (odr_frame_t *odrframe, int broad_id) {
+insert_pending_queue (odr_frame_t *odrframe, char* ip) {
     assert(odrframe);
+    assert(ip);
     
     /* if entry is already present in queue */
     //if (lookup_pending_queue (odrframe->dest_ip) != NULL)
@@ -496,7 +503,7 @@ insert_pending_queue (odr_frame_t *odrframe, int broad_id) {
     
     /* insert at the front of the queue */
     entry->odrframe     = odrframe;
-    entry->broadcast_id = broad_id;
+    strncpy(entry->destip, ip, INET_ADDRSTRLEN);
     
     /* if head is not present */
     if (!pending_queue_head) {
@@ -527,6 +534,24 @@ convert_net_host_order(odr_frame_t* recvd_frame) {
 
     return 0;
 }
+
+
+/* convert the uint32 attribs from host to network order */
+int 
+convert_host_net_order(odr_frame_t* recvd_frame) {
+    assert(recvd_frame); 
+
+    recvd_frame->frame_type      = htonl(recvd_frame->frame_type);
+    recvd_frame->broadcast_id    = htonl(recvd_frame->broadcast_id);
+    recvd_frame->hop_count       = htonl(recvd_frame->hop_count);
+    recvd_frame->payload_len     = htonl(recvd_frame->payload_len);
+    recvd_frame->route_disc_flag = htonl(recvd_frame->route_disc_flag);
+    recvd_frame->src_port        = htonl(recvd_frame->src_port);
+    recvd_frame->dst_port        = htonl(recvd_frame->dst_port);
+
+    return 0;
+}
+
 
 /* populate the recv_buf and populate the recvd_odr_frame */
 int
