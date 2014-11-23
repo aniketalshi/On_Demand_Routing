@@ -61,8 +61,9 @@ int main (int argc, const char* argv[]) {
             continue;
         }
         
-        DEBUG(printf("\n Request sent to node %s with IP: %s", serv_vm, canon_ip));
-        msg_send(cli_sockfd, canon_ip, __SERV_PORT, "hello world", 0);
+        /* Send the message to peer proc */
+        DEBUG(printf("\n Request sent to node %s with IP: %s\n", serv_vm, canon_ip));
+        msg_send(cli_sockfd, canon_ip, __SERV_PORT, "hello world", 0, tempfile);
         
         memset (&msg, 0, MAXLINE);
         /* sit on message recv */

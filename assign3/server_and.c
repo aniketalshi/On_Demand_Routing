@@ -45,7 +45,7 @@ int main (int argc, const char* argv[]) {
         snprintf(msg, sizeof(msg), "%.24s\r\n", ctime(&ticks));
         
         /* send the current timestamp to client through ODR API */
-        msg_send (serv_sockfd, mparams.cli_ip, cli_port, msg, 0); 
+        msg_send (serv_sockfd, mparams.cli_ip, cli_port, msg, 0, __UNIX_SERV_PATH); 
     }
 
     unlink(__UNIX_SERV_PATH);

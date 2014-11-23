@@ -85,10 +85,10 @@ msg_recv (int sockfd, char* msg_buf, char *destip, int *destport, msg_params_t *
         
         *destport = atoi(port);
         strncpy(msg_buf, msg, MAXLINE); 
-        strncpy(destip, ip, MAXLINE);
+        strncpy(destip, ip, IP_LEN);
         
-        strcpy(tt->msg, msg);
-        strcpy(tt->cli_ip, ip);
+        strncpy(tt->msg, msg, MAXLINE);
+        strncpy(tt->cli_ip, ip, IP_LEN);
         tt->port = atoi(port);
     } 
 }
@@ -96,9 +96,10 @@ msg_recv (int sockfd, char* msg_buf, char *destip, int *destport, msg_params_t *
 /* API for sending message */
 int 
 msg_send (int sockfd, char* destip, int destport, 
-                      char *msg, int route_disc_flag) {
+                      char *msg, int route_disc_flag, char *tempfile) {
     assert(destip);
     assert(msg);
+    assert(tempfile);
     
     struct sockaddr_un odr_proc_addr;
     char str_seq[MAXLINE];
@@ -109,10 +110,10 @@ msg_send (int sockfd, char* destip, int destport,
     strcpy(odr_proc_addr.sun_path, UNIX_PROC_PATH);
     
     /* construct the char sequence to write on UNIX Domain socket */
-    sprintf(str_seq, "%s,%d,%s,%d\n", destip, destport, msg, route_disc_flag);
+    sprintf(str_seq, "%s,%d,%s,%s,%d\n", destip, destport, msg, tempfile, route_disc_flag);
     
     if (sendto (sockfd, str_seq, strlen(str_seq), 0, 
-                    (struct sockaddr *) &odr_proc_addr, sizeof(struct sockaddr_un)) <= 0) {
+                    (struct sockaddr *) &odr_proc_addr, sizeof(odr_proc_addr)) <= 0) {
         perror("\n Error in sendto");
         return -1;
     }

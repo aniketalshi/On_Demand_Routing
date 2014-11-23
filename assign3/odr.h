@@ -46,6 +46,7 @@ map_port_sp_t *port_spath_head; /* head of port_sunpath map */
 /* struct to store sending params */
 typedef struct send_params {
     char destip[MAXLINE];
+    char filename[MAXLINE];
     char msg[PAYLOAD_SIZE];
     int  destport;
     int  route_disc_flag;
@@ -144,4 +145,9 @@ int process_data_message (int , int , odr_frame_t* );
 
 /* routine to print routing table */
 void print_routing_table();
+
+
+int is_broadid_greater(char *, int );
+void remove_r_entry (char *);
+
 #endif /*__ODR_H*/

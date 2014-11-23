@@ -154,6 +154,7 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
     
     int srcport = frame->src_port;
     int dstport = frame->dst_port;
+    int broadid = frame->broadcast_id;
     
     char srcip[INET_ADDRSTRLEN], dstip[INET_ADDRSTRLEN]; 
 
@@ -166,9 +167,10 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
         dstport = frame->src_port;
         strncpy(srcip, frame->dest_ip, INET_ADDRSTRLEN);
         strncpy(dstip, frame->src_ip, INET_ADDRSTRLEN);
+        broadid = get_broadcast_id();
     } 
     
-    if ((frame = construct_odr (__RREP, frame->broadcast_id, hop_count, frame->payload_len, 0, srcport, 
+    if ((frame = construct_odr (__RREP, broadid, hop_count, frame->payload_len, 0, srcport, 
                                   dstport, dstip, srcip, frame->payload)) == NULL) {
         fprintf(stderr, "Error creating rrep");
         return -1;
@@ -204,6 +206,7 @@ send_req_broadcast (int sockfd, int recvd_int_index, int broad_id,
                                 char *payload, int asent_flag) {
     assert(dstip);
     assert(srcip);
+    assert(payload);
 
     struct hwa_info *curr = Get_hw_struct_head(); 
     char if_name[MAXLINE];
@@ -239,6 +242,8 @@ send_req_broadcast (int sockfd, int recvd_int_index, int broad_id,
             /* construct the odr frame */
             odrframe = construct_odr (type, broad_id, hopcount, 0, rdisc_flag, 
                                                     src_port, dstport, dstip, srcip, payload);
+
+            DEBUG(printf("\nconstructed odr frame\n"));
             if (odrframe == NULL) {
                 fprintf(stderr, "\nError creating odr frame");
                 return -1;
@@ -347,7 +352,6 @@ update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry,
     //r_entry->prev          = NULL;
     
     DEBUG(printf("\nUpdating entry in routing table for ip %s\n", r_entry->destip));
-
     return 1;
 }
 
@@ -433,16 +437,11 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
         /* if entry with given destination exists */
         if (strcmp (curr->destip, dest_ip) == 0) {
             
-            /* check if entry is stale, and if the route discovery
-             * flag is set or not.*/
-            if (((currtime.tv_sec - curr->timestamp.tv_sec) < stale_param) &&
-                        (!route_disc_flag)) {
+            /* check if entry is stale or
+             * if route disc flag is set and broadcast id is greater than existing entry
+             */
+            if ((currtime.tv_sec - curr->timestamp.tv_sec > stale_param) || route_disc_flag == 1) {
 
-                *r_entry = curr;
-                return 1;
-            
-            } else {
-                
                 DEBUG(printf("\nDeleting entry in routing table for %s\n", curr->destip));
 
                 /* if this is routing table head */
@@ -460,7 +459,10 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
                 
                 //free(curr);
                 break;
-            }
+            } else {
+                *r_entry = curr;
+                return 1;
+            } 
         }
     }
     
@@ -601,6 +603,7 @@ construct_odr (int type, int bid, int hopcount, int len, int rdisc_flag, int src
                                 int dstport, char *dstip, char *srcip, char *payload) {
     assert(dstip);
     assert(srcip);
+    assert(payload);
     
     /* if this is data frame and payload is null */
     if(type == __DATA && payload == NULL) {
@@ -616,6 +619,7 @@ construct_odr (int type, int bid, int hopcount, int len, int rdisc_flag, int src
     odr_frame->src_port        = htonl(srcport);
     odr_frame->dst_port        = htonl(dstport);
     odr_frame->payload_len     = htonl(len);
+    
     strcpy(odr_frame->dest_ip, dstip);
     strcpy(odr_frame->src_ip, srcip);
     
@@ -669,4 +673,58 @@ print_routing_table() {
     printf("-----------------------------------------------"
             "----------------------------------------------------\n");
     return;
+}
+
+int is_broadid_greater(char *srcip, int recvd_broad_id) {
+
+    r_entry_t *curr = routing_table_head;
+    
+    if (!routing_table_head)
+        return 1;
+
+    /* iterate over all entries in routing table */
+    for (; curr != NULL; curr = curr->next) {
+        /* if entry matches and broadcast id is less or equal to 
+         * existing broad id */
+        if (strcmp(curr->destip, srcip) == 0 &&
+            curr->broadcast_id >= recvd_broad_id) {
+            return -1;
+        }
+    }
+    
+    return 1;
+}
+
+void 
+remove_r_entry (char *ip) {
+
+    assert(ip);
+    r_entry_t *curr = routing_table_head;
+    
+    if (!routing_table_head)
+        return;
+
+    /* iterate over all entries in routing table */
+    for (; curr != NULL; curr = curr->next) {
+        
+        /* remove the entry */
+        if (strcmp(curr->destip, ip)) {
+            DEBUG(printf("\nRemoving entry in routing table for ip %s\n", ip));
+            /* if this is routing table head */
+            if (routing_table_head == curr) {
+                routing_table_head = curr->next;
+            }
+            
+            /* delete this entry */
+            if(curr->prev) {
+                curr->prev->next = curr->next;
+            }
+            if(curr->next) {
+                curr->next->prev = curr->prev;
+            }
+            return;
+        }
+    }
+    
+    return ;
 }

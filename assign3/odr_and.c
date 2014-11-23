@@ -12,13 +12,16 @@ int stale_param = 0;
 send_params_t*
 get_send_params (char *str) {
     assert(str);
-    char dstip[MAXLINE], dstport[IP_LEN], msg[MAXLINE], flag[IP_LEN];
+    char dstip[MAXLINE], dstport[IP_LEN], 
+        msg[MAXLINE], flag[IP_LEN], filename[MAXLINE];
     
     send_params_t *sp = (send_params_t *)malloc(sizeof(send_params_t));
-    sscanf(str, "%[^','],%[^','],%[^','],%s", dstip, dstport, msg, flag); 
+    sscanf(str, "%[^','],%[^','],%[^','],%[^','],%s", 
+                            dstip, dstport, msg, filename, flag); 
     
     strncpy(sp->destip, dstip, strlen(dstip));
     strncpy(sp->msg, msg, strlen(msg));
+    strncpy(sp->filename, filename, strlen(filename));
     sp->destport        = atoi(dstport);
     sp->route_disc_flag = atoi(flag);
     return sp;
@@ -116,7 +119,7 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     assert(proc_addr);
     assert(sparams);
 
-    int             entry_present = 0;
+    int entry_present = 0, broad_id = 0;
     map_port_sp_t   *map_entry;
     r_entry_t       *route;
     char *self_ip = get_self_ip();
@@ -126,35 +129,37 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     if (self_ip == NULL) 
         return -1;
     
-    //printf("\nData received from peer process. SUN_PATH:  \"./%s\"", proc_addr->sun_path);
-    //DEBUG(printf("\n%d\n%d\n%s\n%s\n", sparams->route_disc_flag, 
-     //               sparams->destport, sparams->msg, sparams->destip));
+    printf("\nRecvd data from peer process with sun_path: \"%s\"\n", sparams->filename);
     
     /* check if entry exist and if not insert new entry in port to sunpath table */
-    if((map_entry = fetch_entry_path (proc_addr->sun_path)) == NULL) {
+    if((map_entry = fetch_entry_path (sparams->filename)) == NULL) {
         fprintf(stderr, "unable to create entry in port sunpath table");
         return -1;
     }
-
-    /* Check if the entry is already present */
-    entry_present = get_r_entry (sparams->destip, &route, 
-                                    sparams->route_disc_flag); 
-      
     
+    /************************ NOTE ******************************
+     * If the route disc flag is set, we check if broadcast id is
+     * greater than existing entry, only then we remove the entry 
+     * If flag is not set, we check if entry is stale
+     ***********************************************************/
+    
+    /* Check if the entry is already present */
+    entry_present = get_r_entry(sparams->destip, &route, sparams->route_disc_flag); 
+      
     /* If the routing table is empty or if the entry is not present */
     if (entry_present <= 0) {
         DEBUG(printf ("\n Entry is not present in table. Will be sending RREQ \n"));
         
         /* send the RREQ packet*/
-        if (send_req_broadcast (sockfd, -1, get_broadcast_id(), 
+        if (send_req_broadcast (sockfd, -1, get_broadcast_id(),
                                   map_entry->portno, sparams->destport, 
-                                    0, 0, sparams->destip, self_ip, sparams->msg, 0) < 0) {
+                                    0, sparams->route_disc_flag, sparams->destip, self_ip, sparams->msg, 0) < 0) {
             fprintf(stderr, "Error in sending broadcast\n");
             return -1;
         }
         
         /* construct odr frame for this payload msg */ 
-        if ((odrframe = construct_odr (__DATA, 0, 0, PAYLOAD_SIZE, sparams->route_disc_flag, 
+        if ((odrframe = construct_odr (__DATA, 0, get_broadcast_id(), PAYLOAD_SIZE, 0, 
                                                     map_entry->portno, sparams->destport, 
                                                     sparams->destip, self_ip, sparams->msg)) == NULL) {
             fprintf(stderr, "Error in constructing frame\n");
@@ -178,14 +183,15 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     } else { /* If the entry is present in the routing table, send the packet */
         
         assert(route);
+        strcpy(destvm, get_name_ip(sparams->destip));
+        assert(destvm);
         
+        DEBUG(printf("\nEntry already presnet in routing table for %s\n", destvm)); 
         /* send the data packet */
         if (send_data_message(sockfd, map_entry->portno, sparams, route) < 0) {
             fprintf(stderr, "\nError sending data message by ODR\n");
             return -1;
         }
-
-
         return 1;
     }
 
@@ -240,13 +246,43 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
    /* if this is same RREQ sent by me */
    if (recvd_odr_frame->src_ip == self_ip)
        return 1;
-    
+   
+
+    /* if route disc flag is present and broadcast id is greater, 
+     * remove entries in routing table */
+    if (recvd_odr_frame->route_disc_flag == 1) {
+        
+        /* this is duplicate RREQ packet, ignore it */
+        if (is_broadid_greater(recvd_odr_frame->src_ip, 
+                         recvd_odr_frame->broadcast_id) < 0) {
+           return 1; 
+        }
+    }
+        
+//        /* remove entry for destination */
+//        remove_r_entry(recvd_odr_frame->dest_ip);
+//        dest_entry_present = 0;
+//
+//        /* Check if the srcip is already present in routing table. */
+//        src_entry_present = get_r_entry (recvd_odr_frame->src_ip, &src_r_entry, 0); 
+//    
+//    } else {
+//
+//        /* Check if the destip is already present in routing table. */
+//        dest_entry_present = get_r_entry (recvd_odr_frame->dest_ip, &dest_r_entry, 0); 
+//        
+//        /* Check if the srcip is already present in routing table. */
+//        src_entry_present = get_r_entry (recvd_odr_frame->src_ip, &src_r_entry, 0); 
+//    }
+  
+  
     /* Check if the destip is already present in routing table. */
-    dest_entry_present = get_r_entry (recvd_odr_frame->dest_ip, &dest_r_entry, 0); 
+    dest_entry_present = get_r_entry (recvd_odr_frame->dest_ip, &dest_r_entry, 
+                                                        recvd_odr_frame->route_disc_flag); 
     
     /* Check if the srcip is already present in routing table. */
     src_entry_present = get_r_entry (recvd_odr_frame->src_ip, &src_r_entry, 0); 
-   
+    
     /* Get name of vm we recvd packet from */
     strcpy(src_vmname, get_name_ip(recvd_odr_frame->src_ip));
     strcpy(dst_vmname, get_name_ip(recvd_odr_frame->dest_ip));
