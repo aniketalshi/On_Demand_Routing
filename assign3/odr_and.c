@@ -109,6 +109,7 @@ get_file_name (int portno, char *path) {
  * 4. If all is well, send the ethernet frame on int in routing table
  ********************************************************************/
 /* handle request from peer process received by ODR */
+//TODO: if this request is from same client to same server on same node***********************************************
 int
 handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr, 
                                         send_params_t *sparams) {
@@ -135,7 +136,6 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
         return -1;
     }
 
-    
     /* Check if the entry is already present */
     entry_present = get_r_entry (sparams->destip, &route, 
                                     sparams->route_disc_flag); 
@@ -237,13 +237,16 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
         return 0;
     }
     
+   /* if this is same RREQ sent by me */
+   if (recvd_odr_frame->src_ip == self_ip)
+       return 1;
+    
     /* Check if the destip is already present in routing table. */
     dest_entry_present = get_r_entry (recvd_odr_frame->dest_ip, &dest_r_entry, 0); 
     
     /* Check if the srcip is already present in routing table. */
     src_entry_present = get_r_entry (recvd_odr_frame->src_ip, &src_r_entry, 0); 
    
-
     /* Get name of vm we recvd packet from */
     strcpy(src_vmname, get_name_ip(recvd_odr_frame->src_ip));
     strcpy(dst_vmname, get_name_ip(recvd_odr_frame->dest_ip));
@@ -256,7 +259,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             
             DEBUG(printf("\n Received RREQ from %s, intended for %s, broadcast id %d\n", 
                                 src_vmname, dst_vmname, recvd_odr_frame->broadcast_id));
-            
+                
             if (src_entry_present > 0) {
                 /* If entry for src ip is present, check if we can update the entry */ 
                 asent_flag = check_r_entry (recvd_odr_frame, src_r_entry, intf_n, odr_addr->sll_addr); 
@@ -485,6 +488,9 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                     return -1;
                 }
                 
+                /* assign num of hops */
+                recvd_odr_frame->hop_count = src_r_entry->no_hops;
+
                 /* send raw frame on wire */
                 if (send_raw_frame (odr_sockfd, src_mac, dest_r_entry->next_hop, 
                                         dest_r_entry->if_no, recvd_odr_frame) < 0) {
@@ -529,12 +535,27 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
 
         case __ASENT: {
             printf("\n Received packet with Asent flag set");
+            
             if (src_entry_present > 0) {
                 /* If entry for src ip is present, check if we can update the entry */ 
-                check_r_entry (recvd_odr_frame, src_r_entry, intf_n, odr_addr->sll_addr); 
+                asent_flag = check_r_entry (recvd_odr_frame, src_r_entry, intf_n, odr_addr->sll_addr); 
             } else {
                 /* Insert the new information about src IP in r_table. */
                 insert_r_entry (recvd_odr_frame, &src_r_entry, intf_n, odr_addr->sll_addr);
+                asent_flag = 1;
+            }
+            
+            /* if asent flag is set, broadcast this to my neighbors */
+            if (asent_flag == 1) {
+                if (send_req_broadcast (odr_sockfd, intf_n, recvd_odr_frame->broadcast_id, 
+                        recvd_odr_frame->src_port, recvd_odr_frame->dst_port,
+                        recvd_odr_frame->hop_count + 1, recvd_odr_frame->route_disc_flag, 
+                        recvd_odr_frame->dest_ip, recvd_odr_frame->src_ip, 
+                        recvd_odr_frame->payload, 1) < 0) {
+    
+                         fprintf(stderr, "Error Flooding Packet with ASENT flag");
+                        return -1;
+                }
             }
             break;
         }

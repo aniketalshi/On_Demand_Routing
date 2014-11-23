@@ -343,8 +343,8 @@ update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry,
     r_entry->if_no         = intf_n;
     r_entry->no_hops       = recv_buf->hop_count + 1;
     r_entry->broadcast_id  = recv_buf->broadcast_id;
-    r_entry->next          = NULL;
-    r_entry->prev          = NULL;
+    //r_entry->next          = NULL;
+    //r_entry->prev          = NULL;
     
     DEBUG(printf("\nUpdating entry in routing table for ip %s\n", r_entry->destip));
 
@@ -376,6 +376,8 @@ insert_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t **r_entry,
     (*r_entry)->next = routing_table_head;
     routing_table_head = *r_entry;
 
+    DEBUG(printf("\nInserting new entry in routing table for dest ip %s", (*r_entry)->destip));
+
     return 1;
 }
 
@@ -387,24 +389,24 @@ check_r_entry (odr_frame_t *recvd_odr_frame,
     assert (recvd_odr_frame);
     assert (r_entry);
     assert (next_hop);
+   
     
-    /* Check if we have a lower hop count */
-    if ((recvd_odr_frame->hop_count <= r_entry->no_hops) &&
-       (recvd_odr_frame->broadcast_id >= r_entry->broadcast_id)) {
-        
+    /* if this is new broadcast id */
+    if (recvd_odr_frame->broadcast_id > r_entry->broadcast_id) {
+
         /* Update the routing table entry */
         update_r_entry (recvd_odr_frame, r_entry, intf_n, next_hop); 
         return 1;
     }
 
-    /* If hop count is greater, but broadcast ID is newer. */
-    if (recvd_odr_frame->broadcast_id > r_entry->broadcast_id) {
-        
-        /* Update the routing table entry */
-        update_r_entry (recvd_odr_frame, r_entry, intf_n, next_hop); 
-        return 1;
-    }
-    
+    /* if this is existing broadcast id */
+    if (recvd_odr_frame->broadcast_id == r_entry->broadcast_id &&
+         ((recvd_odr_frame->hop_count + 1) <= r_entry->no_hops)) {
+
+            /* Update the routing table entry */
+            update_r_entry (recvd_odr_frame, r_entry, intf_n, next_hop); 
+            return 1;
+     }
     /* Entry not updated. */
     return 0;
 }
