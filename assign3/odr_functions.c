@@ -150,7 +150,7 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
 
     assert(frame);
     assert(entry);
-    char *src_mac, *self_ip, *vmname;
+    char *src_mac, *self_ip, vmname[INET_ADDRSTRLEN];
     
     int srcport = frame->src_port;
     int dstport = frame->dst_port;
@@ -182,7 +182,7 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
     assert(self_ip);
     
     /* get name corresponding to this ip */
-    vmname = get_name_ip(self_ip);
+    strcpy(vmname, get_name_ip(self_ip));
     assert(vmname);
     
     /* send raw frame on wire */     
@@ -231,7 +231,7 @@ send_req_broadcast (int sockfd, int recvd_int_index, int broad_id,
        if ((strcmp(if_name, "lo") != 0) && (strcmp(if_name, "eth0") != 0) 
                                         && curr->if_index != recvd_int_index) {
             
-            printf ("\nRREQ Sent. Interface: %s, Broadcast id %d\n", if_name, broad_id);
+            DEBUG(printf ("\nRREQ Sent. Interface: %s, Broadcast id %d\n", if_name, broad_id));
             if (asent_flag == 1) {
                 printf("\nASENT Flag set. No reply expected\n");
             }
@@ -332,7 +332,7 @@ send_raw_frame (int sockfd, char *src_macaddr,
 int
 update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry, 
                     int intf_n, unsigned char *next_hop) {
-
+    
     if (!recv_buf || !r_entry || !next_hop)
         return -1;
 
@@ -345,6 +345,8 @@ update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry,
     r_entry->broadcast_id  = recv_buf->broadcast_id;
     r_entry->next          = NULL;
     r_entry->prev          = NULL;
+    
+    DEBUG(printf("\nUpdating entry in routing table for ip %s\n", r_entry->destip));
 
     return 1;
 }

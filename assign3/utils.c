@@ -321,6 +321,22 @@ construct_name_to_ip_table() {
 
 /* get name from ip */
 char *get_name_ip (char *ip) {
+
+    assert(ip);
+    struct hostent *he;
+    struct in_addr ipv4addr;
+    
+    inet_pton(AF_INET, ip, &ipv4addr);
+    he = gethostbyaddr(&ipv4addr, sizeof(ipv4addr), AF_INET);
+    
+    assert(he); 
+    return he->h_name;
+    //printf("Host name: %s\n", he->h_name);
+}
+
+#if 0
+/* get name from ip */
+char *get_name_ip (char *ip) {
     assert(ip);
     name_to_ip_t *curr = NULL;
     
@@ -341,4 +357,4 @@ void print_name_ip() {
     }
     printf("\n");
 }
-
+#endif

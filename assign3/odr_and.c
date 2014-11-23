@@ -120,6 +120,7 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
     r_entry_t       *route;
     char *self_ip = get_self_ip();
     odr_frame_t *odrframe;
+    char destvm[INET_ADDRSTRLEN];
     
     if (self_ip == NULL) 
         return -1;
@@ -169,7 +170,7 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
             return -1;
         }
         
-        char *destvm = get_name_ip(sparams->destip);
+        strcpy(destvm, get_name_ip(sparams->destip));
         assert(destvm);
         
         DEBUG(printf("\nInserted in pending Queue Data packet for %s\n", destvm)); 
@@ -210,7 +211,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
 
     odr_frame_t *recvd_odr_frame;
     char *self_ip, sun_path[MAXLINE], next_hop[HWADDR+1];
-    char *src_vmname, *dst_vmname, *src_mac;
+    char src_vmname[INET_ADDRSTRLEN], dst_vmname[INET_ADDRSTRLEN], *src_mac;
     r_entry_t *dest_r_entry, *src_r_entry, *r_entry;
     odr_frame_t *frame;
     
@@ -244,8 +245,8 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
    
 
     /* Get name of vm we recvd packet from */
-    src_vmname = get_name_ip(recvd_odr_frame->src_ip); 
-    dst_vmname = get_name_ip(recvd_odr_frame->dest_ip); 
+    strcpy(src_vmname, get_name_ip(recvd_odr_frame->src_ip));
+    strcpy(dst_vmname, get_name_ip(recvd_odr_frame->dest_ip));
     assert(src_vmname);
     assert(dst_vmname);
 
@@ -528,6 +529,13 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
 
         case __ASENT: {
             printf("\n Received packet with Asent flag set");
+            if (src_entry_present > 0) {
+                /* If entry for src ip is present, check if we can update the entry */ 
+                check_r_entry (recvd_odr_frame, src_r_entry, intf_n, odr_addr->sll_addr); 
+            } else {
+                /* Insert the new information about src IP in r_table. */
+                insert_r_entry (recvd_odr_frame, &src_r_entry, intf_n, odr_addr->sll_addr);
+            }
             break;
         }
 
@@ -554,11 +562,11 @@ int main (int argc, const char *argv[]) {
     socklen_t odrsize = sizeof(struct sockaddr_ll);
     
     /* unlink /etc/hosts so query resolves actual ip */
-    unlink("/etc/hosts");
+    //unlink("/etc/hosts");
     
     /* construct name to canonical ip table */ 
-    construct_name_to_ip_table();
-    print_name_ip();
+    //construct_name_to_ip_table();
+    //print_name_ip();
     
     /* insert serv port to server sunpath mapping in table */
     if (insert_map_port_sp (__SERV_PORT, __UNIX_SERV_PATH) < 0) {

@@ -68,7 +68,7 @@ int main (int argc, const char* argv[]) {
         /* sit on message recv */
         msg_recv (cli_sockfd, msg, cli_ip, &cli_port, &mparams);
         printf ("\nServer at %s replied with time : %s\n", serv_vm, mparams.msg);
-        break;
+        //break;
     }
 
     unlink(tempfile);
