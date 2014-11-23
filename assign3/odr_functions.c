@@ -144,7 +144,6 @@ send_data_message (int sockfd, int src_port,
     return 0;
 }
 
-
 /* send the reply packet */
 int
 send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_count, int swap) { 
@@ -191,7 +190,7 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
         return -1;
 
     DEBUG(printf("\n RREP Sent from node : %s. Outgoing interface %d\n",
-                                                  frame->src_ip, entry->if_no));
+                                                         srcip, entry->if_no));
     DEBUG(printf("\nType %d", frame->frame_type));
     return 0;
 }
@@ -199,14 +198,23 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
 
 /* broadcast the rreq packet received from this proc*/
 int 
-send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, int src_port, int dstport,
-                      int hopcount, int rdisc_flag, char *dstip, char *srcip, char *payload) {
+send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, 
+                                int src_port, int dstport, int hopcount, 
+                                int rdisc_flag, char *dstip, char *srcip, 
+                                char *payload, int asent_flag) {
     assert(dstip);
     assert(srcip);
 
     struct hwa_info *curr = Get_hw_struct_head(); 
     char if_name[MAXLINE];
     odr_frame_t *odrframe;
+
+
+    int type = __RREQ;
+
+    /* if asent flag is sent, this frame is of type asent */
+    if (asent_flag == 1)
+        type = __ASENT;
     
     /* dest mac with all ones */
     unsigned char dest_mac[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
@@ -224,9 +232,12 @@ send_req_broadcast (int sockfd, int recvd_int_index, int broad_id, int src_port,
                                         && curr->if_index != recvd_int_index) {
             
             printf ("\nRREQ Sent. Interface: %s, Broadcast id %d\n", if_name, broad_id);
+            if (asent_flag == 1) {
+                printf("\nASENT Flag set. No reply expected\n");
+            }
             
             /* construct the odr frame */
-            odrframe = construct_odr (__RREQ, broad_id, hopcount, 0, rdisc_flag, 
+            odrframe = construct_odr (type, broad_id, hopcount, 0, rdisc_flag, 
                                                     src_port, dstport, dstip, srcip, payload);
             if (odrframe == NULL) {
                 fprintf(stderr, "\nError creating odr frame");
@@ -427,6 +438,9 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
                 return 1;
             
             } else {
+                
+                DEBUG(printf("\nDeleting entry in routing table for %s\n", curr->destip));
+
                 /* if this is routing table head */
                 if (routing_table_head == curr) {
                     routing_table_head = curr->next;

@@ -147,7 +147,7 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
         /* send the RREQ packet*/
         if (send_req_broadcast (sockfd, -1, get_broadcast_id(), 
                                   map_entry->portno, sparams->destport, 
-                                    0, 0, sparams->destip, self_ip, sparams->msg) < 0) {
+                                    0, 0, sparams->destip, self_ip, sparams->msg, 0) < 0) {
             fprintf(stderr, "Error in sending broadcast\n");
             return -1;
         }
@@ -286,14 +286,37 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                 
                 /* send the rrep */
                 if (send_rrep_packet (odr_sockfd, recvd_odr_frame, 
-                                     src_r_entry, dest_r_entry->no_hops, 0) < 0) {
+                                     src_r_entry, dest_r_entry->no_hops, 1) < 0) {
                     fprintf(stderr, "Error sending RREP packet");
                     return -1;
                 }
+                
                 /* if asent flag is set, broadcast information with asent flag set */
+                if (asent_flag == 1) { 
+                    if (send_req_broadcast (odr_sockfd, intf_n, recvd_odr_frame->broadcast_id, 
+                                            recvd_odr_frame->src_port, recvd_odr_frame->dst_port,
+                                            recvd_odr_frame->hop_count + 1, recvd_odr_frame->route_disc_flag, 
+                                            recvd_odr_frame->dest_ip, recvd_odr_frame->src_ip, 
+                                            recvd_odr_frame->payload, 1) < 0) {
+                        
+                        fprintf(stderr, "Error Flooding Packet with ASENT flag");
+                        return -1;
+                    }
+                }
                 
                 break;
+            
             } else {
+                
+                /* Info about src entry is updated, only then we need to flood this RREQ
+                 * else we have already flooded this RREQ, we can ignore this 
+                 */
+                if (asent_flag == 0) { 
+                    DEBUG(printf("\n RREQ already flooded for this request with id %d",
+                                                            recvd_odr_frame->broadcast_id));
+                    break;
+                }
+                
                 assert(recvd_odr_frame);
                 
                 /* if dest entry is not present, flood rreq */
@@ -301,7 +324,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                                         recvd_odr_frame->src_port, recvd_odr_frame->dst_port,
                                         recvd_odr_frame->hop_count + 1, recvd_odr_frame->route_disc_flag, 
                                         recvd_odr_frame->dest_ip, recvd_odr_frame->src_ip, 
-                                        recvd_odr_frame->payload) < 0) {
+                                        recvd_odr_frame->payload, 0) < 0) {
                     
                     fprintf(stderr, "Error Flooding RREP");
                     return -1;
@@ -369,7 +392,6 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                         assert(get_name_ip (src_r_entry->destip));
                         DEBUG(printf("\nData packet sent to node %s, on interface %d",
                                         get_name_ip (src_r_entry->destip), src_r_entry->if_no));
-
                     }
 
                }
@@ -411,7 +433,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                 if (send_req_broadcast (odr_sockfd, intf_n, broadcast_id, 
                                         -1, recvd_odr_frame->dst_port,
                                         0, 0, recvd_odr_frame->dest_ip, self_ip, 
-                                        recvd_odr_frame->payload) < 0) {
+                                        recvd_odr_frame->payload, 0) < 0) {
                     
                     fprintf(stderr, "Error Flooding RREP");
                     return -1;
@@ -493,7 +515,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                 if (send_req_broadcast (odr_sockfd, intf_n, broadcast_id, 
                                         -1, recvd_odr_frame->dst_port,
                                         0, 0, recvd_odr_frame->dest_ip, self_ip, 
-                                        recvd_odr_frame->payload) < 0) {
+                                        recvd_odr_frame->payload, 0) < 0) {
                     
                     fprintf(stderr, "Error Flooding RREP");
                     return -1;
@@ -504,8 +526,8 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             break;
         }
 
-        case __RREQ_ASENT: {
-            printf("\n Request packet with Asent flag set");
+        case __ASENT: {
+            printf("\n Received packet with Asent flag set");
             break;
         }
 
@@ -530,7 +552,10 @@ int main (int argc, const char *argv[]) {
     socklen        = sizeof(struct sockaddr_un);
     void *recv_buf = malloc(ETH_FRAME_LEN); 
     socklen_t odrsize = sizeof(struct sockaddr_ll);
-   
+    
+    /* unlink /etc/hosts so query resolves actual ip */
+    unlink("/etc/hosts");
+    
     /* construct name to canonical ip table */ 
     construct_name_to_ip_table();
     print_name_ip();

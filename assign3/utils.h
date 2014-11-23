@@ -82,5 +82,6 @@ int get_broadcast_id();
 char *get_hwaddr_from_int(int);
 char * get_self_ip ();
 int msg_recv (int , char*, char *, int *, msg_params_t *);
+void print_name_ip();
 
 #endif /* __UTILS_H */

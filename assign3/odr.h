@@ -15,7 +15,7 @@
 #define __UNIX_SERV_PATH "servpathfile"
 #define __SERV_PORT 5500
 
-#define USID_PROTO 0xA11D
+#define USID_PROTO 0xA77D
 #define VMNAME_LEN 10
 #define IP_LEN     50
 #define PAYLOAD_SIZE 1440
@@ -25,7 +25,7 @@
 #define __RREQ       1
 #define __RREP       2
 #define __DATA       3
-#define __RREQ_ASENT 4
+#define __ASENT      4
 
 /****************** map of port to sunpath table ************/
 
@@ -119,7 +119,7 @@ int check_r_entry (odr_frame_t *, r_entry_t *, int , unsigned char *);
 
 
 /* broadcast the rreq packets */
-int send_req_broadcast (int, int, int, int, int, int, int, char *, char *, char *);     
+int send_req_broadcast (int, int, int, int, int, int, int, char *, char *, char *, int);     
 
 odr_frame_t * lookup_pending_queue (char *);/* lookup the frame in pending_queue */
 
