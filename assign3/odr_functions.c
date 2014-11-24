@@ -10,8 +10,6 @@ int
 insert_map_port_sp (int portno, char *path) {
     assert(path);
     
-    DEBUG(printf("Inserting function\n"));
-    
     map_port_sp_t *entry;
 
     entry = (map_port_sp_t *) calloc(1, sizeof(map_port_sp_t));
@@ -22,7 +20,7 @@ insert_map_port_sp (int portno, char *path) {
     /* if no entry in table */
     if (!port_spath_head) {
         port_spath_head = entry;
-        DEBUG(printf("Inserted in Table path %s\n", path));
+        DEBUG(printf("\nInserted in Table port no %d : path %s\n", portno, path));
         return 1;
     }
 
@@ -30,7 +28,7 @@ insert_map_port_sp (int portno, char *path) {
     entry->next = port_spath_head;
     port_spath_head = entry;
     
-    DEBUG(printf("Inserted in Table path %s\n", path));
+    DEBUG(printf("\nInserted in Table port no %d : path %s\n", portno, path));
     return 1;
 }
 
@@ -49,7 +47,12 @@ send_to_peer_process (int sockfd, char *sun_path,
     /* TODO:add route disc flag here */
     sprintf(str_seq, "%s,%d,%s,%d\n", src_ip, src_port, payload, 0);
     
-    DEBUG(printf("\nPayload send to peer proc : %s\n", payload));
+    //DEBUG(printf("\nPayload send to peer proc : %s\n", payload));
+    if (src_port = __SERV_PORT) {
+        printf("ODR sending sending data to client process");
+    } else {
+        printf("ODR sending sending data to server process\n");
+    }
 
     memset(&proc_addr, 0, sizeof(struct sockaddr_un));
     
@@ -65,7 +68,6 @@ send_to_peer_process (int sockfd, char *sun_path,
         return -1;
     }
     
-    DEBUG(printf("Data written on application socket\n"));
     return 0;
 }
 
@@ -91,7 +93,7 @@ process_data_message (int proc_sockfd, int odr_sockfd, odr_frame_t* odrframe) {
             return -1;
         }
 
-        printf("Sun Path entry for application %s\n", port_sp_entry->sun_path);
+        //printf("Sun Path entry for application %s\n", port_sp_entry->sun_path);
         
         /* send msg to peer process at requested port no 
          * send source nodes ip address, port num and payload*/
@@ -116,10 +118,23 @@ send_data_message (int sockfd, int src_port,
     
     char *src_ip, *src_mac;
     odr_frame_t *odrframe;
+    char src_vmname[INET_ADDRSTRLEN], dst_vmname[INET_ADDRSTRLEN];
     
     if ((src_ip = get_self_ip()) == NULL) {
         return -1;
     }
+   
+    /* Get name of vm we recvd packet from */
+    strcpy(src_vmname, get_name_ip(src_ip));
+    strcpy(dst_vmname, get_name_ip(sparams->destip));
+    assert(src_vmname);
+    assert(dst_vmname);
+    
+    if (sparams->destport == __SERV_PORT)
+        printf("Client at %s sending data packet, requesting time from server at %s\n", src_vmname, dst_vmname);
+    else
+        printf("Server at %s sending data packet to client at %s\n", src_vmname, dst_vmname);
+
     /* construct ODR Frame */
     if ((odrframe = construct_odr (__DATA, entry->broadcast_id, 0, PAYLOAD_SIZE, 
                             sparams->route_disc_flag, src_port, sparams->destport, 
@@ -134,6 +149,9 @@ send_data_message (int sockfd, int src_port,
         return -1;
     }
     
+    printf("\nSending Data packet. Src Node : %s, Destination Node %s\n",
+                                                       src_vmname, dst_vmname);
+
     /* send raw frame on wire */
     if (send_raw_frame (sockfd, src_mac, 
                          entry->next_hop, entry->if_no, odrframe) < 0) {
@@ -191,9 +209,8 @@ send_rrep_packet (int sockfd, odr_frame_t *frame, r_entry_t *entry, int hop_coun
     if(send_raw_frame (sockfd, src_mac, entry->next_hop, entry->if_no, frame) < 0)
         return -1;
 
-    DEBUG(printf("\n RREP Sent from node : %s. Outgoing interface %d\n",
-                                                         srcip, entry->if_no));
-    DEBUG(printf("\nType %d", frame->frame_type));
+    printf("\nRREP Sent from node : %s. Outgoing interface %d\n",
+                                                         vmname, entry->if_no);
     return 0;
 }
 
@@ -212,6 +229,12 @@ send_req_broadcast (int sockfd, int recvd_int_index, int broad_id,
     char if_name[MAXLINE];
     odr_frame_t *odrframe;
 
+    char src_vmname[INET_ADDRSTRLEN], dst_vmname[INET_ADDRSTRLEN];
+
+    strcpy(src_vmname, get_name_ip(srcip));
+    strcpy(dst_vmname, get_name_ip(dstip));
+    assert(src_vmname);
+    assert(dst_vmname);
 
     int type = __RREQ;
 
@@ -226,32 +249,37 @@ send_req_broadcast (int sockfd, int recvd_int_index, int broad_id,
     for (; curr != NULL; curr = curr->hwa_next) {
        
        memset(if_name, 0, MAXLINE); 
+       
        /* if there are aliases in if name with colons, split them */
        sscanf(curr->if_name, "%[^:]", if_name); 
         
        /*send packet on all except loopback
-        * eth0 and interface on which packet is received */
+        * eth0 and interface on which packet is received 
+        */
        if ((strcmp(if_name, "lo") != 0) && (strcmp(if_name, "eth0") != 0) 
                                         && curr->if_index != recvd_int_index) {
             
             DEBUG(printf ("\nRREQ Sent. Interface: %s, Broadcast id %d\n", if_name, broad_id));
+            printf ("RREQ sent. Source node %s, Destination Node %s on"
+                                "interface %s\n", src_vmname, dst_vmname, if_name);
+
             if (asent_flag == 1) {
-                printf("\nASENT Flag set. No reply expected\n");
+                printf("ASENT Flag set. No reply expected\n");
             }
             
             /* construct the odr frame */
             odrframe = construct_odr (type, broad_id, hopcount, 0, rdisc_flag, 
                                                     src_port, dstport, dstip, srcip, payload);
 
-            DEBUG(printf("\nconstructed odr frame\n"));
             if (odrframe == NULL) {
                 fprintf(stderr, "\nError creating odr frame");
                 return -1;
             }
             
             if(send_raw_frame (sockfd, curr->if_haddr, 
-                                dest_mac, curr->if_index, odrframe) < 0)
+                                dest_mac, curr->if_index, odrframe) < 0) {
                 return -1;
+            }
         }
     }
     return 0;
@@ -322,7 +350,23 @@ send_raw_frame (int sockfd, char *src_macaddr,
     
     /* copy the odr frame data into ethernet frame */
     memcpy((void *)data, (void *)odrframe, sizeof(odr_frame_t));
-    
+   
+
+    char src_vmname[INET_ADDRSTRLEN], *src_ip;
+    if ((src_ip = get_self_ip()) == NULL) {
+        return -1;
+    }
+   
+    /* Get name of vm we recvd packet from */
+    strcpy(src_vmname, get_name_ip(src_ip));
+    assert(src_vmname);
+
+    printf("ODR on node %s sending ETH_FRAME. SRC MAC_ADDR :", src_vmname);
+    print_mac (src_macaddr);
+    printf("DEST MAC_ADDR :");
+    print_mac (dest_macaddr);
+    printf("\n");
+
     /* send the packet on wire */
     if ((send_result = sendto(sockfd, buffer, ETH_FRAME_LEN, 0, 
             (struct sockaddr*)&socket_address, sizeof(socket_address))) < 0) {
@@ -338,6 +382,8 @@ int
 update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry, 
                     int intf_n, unsigned char *next_hop) {
     
+    char src_vmname[INET_ADDRSTRLEN];
+
     if (!recv_buf || !r_entry || !next_hop)
         return -1;
 
@@ -348,10 +394,9 @@ update_r_entry (odr_frame_t *recv_buf, r_entry_t *r_entry,
     r_entry->if_no         = intf_n;
     r_entry->no_hops       = recv_buf->hop_count + 1;
     r_entry->broadcast_id  = recv_buf->broadcast_id;
-    //r_entry->next          = NULL;
-    //r_entry->prev          = NULL;
-    
-    DEBUG(printf("\nUpdating entry in routing table for ip %s\n", r_entry->destip));
+
+    strcpy(src_vmname, get_name_ip(r_entry->destip));
+    printf("Updating entry in routing table for ip %s\n", src_vmname);
     return 1;
 }
 
@@ -362,12 +407,15 @@ insert_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t **r_entry,
     assert(recvd_odr_frame);
     assert(next_hop);
     
+    
     /* create new entry */
     *r_entry = (r_entry_t *)calloc(1, sizeof(r_entry_t));
     
     /* insert all the fields in the routing table. */
     if (update_r_entry (recvd_odr_frame, *r_entry, intf_n, next_hop) < 0)
         return -1;
+    
+    DEBUG(printf("\nInserting in routing table for dest ip %s\n", (*r_entry)->destip));
     
     /* if head is null */
     if (!routing_table_head ) {
@@ -379,8 +427,6 @@ insert_r_entry (odr_frame_t *recvd_odr_frame, r_entry_t **r_entry,
     routing_table_head->prev = (*r_entry);
     (*r_entry)->next = routing_table_head;
     routing_table_head = *r_entry;
-
-    DEBUG(printf("\nInserting new entry in routing table for dest ip %s", (*r_entry)->destip));
 
     return 1;
 }
@@ -438,8 +484,8 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
         /* if entry with given destination exists */
         if (strcmp (curr->destip, dest_ip) == 0) {
            
-            DEBUG (printf ("\nStale parameter: %d, currtime: %d, recvd time: %d\n", stale_param,
-                        currtime.tv_sec, curr->timestamp.tv_sec));
+            // DEBUG (printf ("\nStale parameter: %d, currtime: %d, recvd time: %d\n", stale_param,
+            //             currtime.tv_sec, curr->timestamp.tv_sec));
             /* check if entry is stale or
              * if route disc flag is set and broadcast id is greater than existing entry
              */
@@ -481,8 +527,7 @@ lookup_pending_queue (char *destip) {
     if (!pending_queue_head)
        return NULL;
 
-    
-    DEBUG(printf("\nLooking in pending queue for dest %s\n", destip));
+    //DEBUG(printf("\nLooking in pending queue for dest %s\n", destip));
     pending_msgs_t *curr = pending_queue_head;
     
     for(; curr != NULL; curr = curr->next) {
@@ -518,10 +563,6 @@ insert_pending_queue (odr_frame_t *odrframe, char* ip) {
     assert(odrframe);
     assert(ip);
     
-    /* if entry is already present in queue */
-    //if (lookup_pending_queue (odrframe->dest_ip) != NULL)
-    //    return 0;
-   
     pending_msgs_t *entry = calloc(1, sizeof(pending_msgs_t));
     
     /* insert at the front of the queue */

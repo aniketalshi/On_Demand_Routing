@@ -90,7 +90,6 @@ int main (int argc, const char* argv[]) {
         msg_recv (cli_sockfd, msg, cli_ip, &cli_port, &mparams);
         alarm (0);
         printf ("\nServer at %s replied with time : %s\n", serv_vm, mparams.msg);
-        break;
     }
 
     unlink(tempfile);

@@ -25,7 +25,7 @@
 #define IP_LEN     50
 #define PAYLOAD_SIZE 1440
 
-#define __DEBUG 1
+#define __DEBUG 0
 
 #ifdef __DEBUG
 #  define DEBUG(x) x
