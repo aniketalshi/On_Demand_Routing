@@ -431,16 +431,19 @@ get_r_entry (char *dest_ip, r_entry_t **r_entry, int route_disc_flag) {
     struct timeval currtime;
     gettimeofday(&currtime, 0);
     
+
     /* iterate over all entries in routing table */
     for (; curr != NULL; curr = curr->next) {
         
         /* if entry with given destination exists */
         if (strcmp (curr->destip, dest_ip) == 0) {
-            
+           
+            DEBUG (printf ("\nStale parameter: %d, currtime: %d, recvd time: %d\n", stale_param,
+                        currtime.tv_sec, curr->timestamp.tv_sec));
             /* check if entry is stale or
              * if route disc flag is set and broadcast id is greater than existing entry
              */
-            if ((currtime.tv_sec - curr->timestamp.tv_sec > stale_param) || route_disc_flag == 1) {
+            if (((currtime.tv_sec - curr->timestamp.tv_sec) >= stale_param) || route_disc_flag == 1) {
 
                 DEBUG(printf("\nDeleting entry in routing table for %s\n", curr->destip));
 

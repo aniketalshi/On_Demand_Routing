@@ -6,12 +6,20 @@
 #include <ctype.h>
 #include <unp.h>
 #include "utils.h"
+#include <setjmp.h>
 
 #define __SERV_PORT 5500
 #define VMNAME_LEN 10
 #define IP_LEN     50
 #define PAYLOAD_SIZE 1440
 
+static sigjmp_buf jmp;
+
+/* Handle the SIGALRM. */
+void
+signal_handler (int signal) {
+        siglongjmp(jmp, 1);
+}
 
 int main (int argc, const char* argv[]) {
     
@@ -29,7 +37,9 @@ int main (int argc, const char* argv[]) {
         return 0;
     }
     unlink (tempfile);
-    
+
+    signal(SIGALRM, signal_handler);
+
     /* create a UNIX Domain socket */
     if ((cli_sockfd = socket(AF_LOCAL, SOCK_DGRAM, 0)) < 0) {
         fprintf(stderr, "\n error creating unix domain socket\n");
@@ -60,16 +70,27 @@ int main (int argc, const char* argv[]) {
             fprintf(stderr, "\n server vm not found. Try again");
             continue;
         }
-        
-        /* Send the message to peer proc */
-        DEBUG(printf("\n Request sent to node %s with IP: %s\n", serv_vm, canon_ip));
+       
+        alarm (5);
+
+        DEBUG(printf("\n Request sent to node %s with IP: %s", serv_vm, canon_ip));
         msg_send(cli_sockfd, canon_ip, __SERV_PORT, "hello world", 0, tempfile);
+        
+        /* Handle the timer signal, and retransmit. */
+        if (sigsetjmp(jmp, 1) != 0) {
+
+            printf ("Sending the packet again.\n");
+
+            /* Send the packet again with route_disc flag set. */                                                                                             
+            msg_send(cli_sockfd, canon_ip, __SERV_PORT, "hello world", 1, tempfile);
+        }
         
         memset (&msg, 0, MAXLINE);
         /* sit on message recv */
         msg_recv (cli_sockfd, msg, cli_ip, &cli_port, &mparams);
+        alarm (0);
         printf ("\nServer at %s replied with time : %s\n", serv_vm, mparams.msg);
-        //break;
+        break;
     }
 
     unlink(tempfile);

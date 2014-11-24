@@ -15,7 +15,7 @@
 #define __UNIX_SERV_PATH "servpathfile"
 #define __SERV_PORT 5500
 
-#define USID_PROTO 0xA77D
+#define USID_PROTO 0xD77D
 #define VMNAME_LEN 10
 #define IP_LEN     50
 #define PAYLOAD_SIZE 1440

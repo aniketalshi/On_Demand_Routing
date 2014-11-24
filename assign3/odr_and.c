@@ -114,13 +114,13 @@ get_file_name (int portno, char *path) {
 /* handle request from peer process received by ODR */
 //TODO: if this request is from same client to same server on same node***********************************************
 int
-handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr, 
+handle_peer_msg (int sockfd, int proc_sockfd, struct sockaddr_un *proc_addr, 
                                         send_params_t *sparams) {
     assert(proc_addr);
     assert(sparams);
 
     int entry_present = 0, broad_id = 0;
-    map_port_sp_t   *map_entry;
+    map_port_sp_t   *map_entry, *peer_entry;
     r_entry_t       *route;
     char *self_ip = get_self_ip();
     odr_frame_t *odrframe;
@@ -136,7 +136,24 @@ handle_peer_msg (int sockfd, struct sockaddr_un *proc_addr,
         fprintf(stderr, "unable to create entry in port sunpath table");
         return -1;
     }
+  
+    if (sparams->route_disc_flag) {
+        DEBUG (printf ("\nGot packet with route discoery flag set.\n"));
+    }
+    if (strcmp (self_ip, sparams->destip) == 0) {
     
+        peer_entry = fetch_entry_port (sparams->destport);
+        assert (peer_entry);
+
+        if (send_to_peer_process (proc_sockfd, peer_entry->sun_path, self_ip, map_entry->portno, sparams->msg) < 0) {
+            
+            fprintf(stderr, "unable to send entry in port sunpath table");
+            return -1;
+        
+        }
+        return 1;
+    }
+
     /************************ NOTE ******************************
      * If the route disc flag is set, we check if broadcast id is
      * greater than existing entry, only then we remove the entry 
@@ -243,15 +260,15 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
         return 0;
     }
     
-   /* if this is same RREQ sent by me */
-   if (recvd_odr_frame->src_ip == self_ip)
-       return 1;
-   
+    /* if this is same RREQ sent by me */
+    if (recvd_odr_frame->src_ip == self_ip)
+        return 1;
 
     /* if route disc flag is present and broadcast id is greater, 
      * remove entries in routing table */
     if (recvd_odr_frame->route_disc_flag == 1) {
         
+        DEBUG (printf ("\nGot packet with route discovery flag set.\n"));
         /* this is duplicate RREQ packet, ignore it */
         if (is_broadid_greater(recvd_odr_frame->src_ip, 
                          recvd_odr_frame->broadcast_id) < 0) {
@@ -502,7 +519,7 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                 /* check data msg and send to peer process if it is for me */
                 if(process_data_message (proc_sockfd, odr_sockfd, recvd_odr_frame) < 0) {
                     fprintf (stderr, "unable to process data\n");
-                    return -1;
+                    break;
                 }
 
                 break;
@@ -514,6 +531,9 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
             if (dest_entry_present > 0) {
                 assert(dest_r_entry); 
                 
+                /* assign num of hops */
+                recvd_odr_frame->hop_count = src_r_entry->no_hops;
+
                 DEBUG(printf("\n Entry exists in routing table for node %s\n", dst_vmname));
                 /* convert host to network order for sending packet */
                 convert_host_net_order(recvd_odr_frame);
@@ -524,9 +544,6 @@ handle_ethernet_msg (int odr_sockfd, int proc_sockfd,
                     return -1;
                 }
                 
-                /* assign num of hops */
-                recvd_odr_frame->hop_count = src_r_entry->no_hops;
-
                 /* send raw frame on wire */
                 if (send_raw_frame (odr_sockfd, src_mac, dest_r_entry->next_hop, 
                                         dest_r_entry->if_no, recvd_odr_frame) < 0) {
@@ -688,7 +705,8 @@ int main (int argc, const char *argv[]) {
         if (FD_ISSET(proc_sockfd, &currset)) {
             memset(buff, 0, MAXLINE); 
             memset(&proc_addr, 0, sizeof(proc_addr));
-            
+           
+            printf ("\n====================================PROC_MESSAGE_RECEIVED====================================\n");
             /* block on recvfrom. collect info in 
              * proc_addr and data in buff */
             if (recvfrom(proc_sockfd, buff, MAXLINE, 
@@ -701,8 +719,9 @@ int main (int argc, const char *argv[]) {
             send_params_t* sparams = get_send_params (buff);
             
             /* process this msg received from peer proc */
-            if (handle_peer_msg(odr_sockfd, &proc_addr, sparams) < 0)
+            if (handle_peer_msg(odr_sockfd, proc_sockfd, &proc_addr, sparams) < 0)
                 return 0;
+            printf ("\n====================================PROC_MESSAGE_HANDLED====================================\n");
         }
         
         /* receiving on ethernet interface */
@@ -710,6 +729,7 @@ int main (int argc, const char *argv[]) {
             memset(recv_buf, 0, ETH_FRAME_LEN); 
             memset(&odr_addr, 0, sizeof(odr_addr));
             
+            printf ("\n====================================ETHERNET_MESSAGE_RECEIVED====================================\n");
             if ((len = recvfrom(odr_sockfd, recv_buf, ETH_FRAME_LEN, 0, 
                                     (struct sockaddr *)&odr_addr, &odrsize)) < 0) {
                 perror("\nError in recvfrom");
@@ -720,6 +740,7 @@ int main (int argc, const char *argv[]) {
             if(handle_ethernet_msg (odr_sockfd, proc_sockfd, &odr_addr, recv_buf) < 0)
                 return 0;
 
+            printf ("\n====================================ETHERNET_MESSAGE_HANDLED====================================\n");
         }
     }
 
